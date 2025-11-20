@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useServices } from '@/lib/services/ServiceContext';
+import { handleServiceError } from '@/lib/utils/errorHandling';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { ErrorScreen } from '@/components/ui/ErrorScreen';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
@@ -10,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AnimatedButton } from '@/components/ui/animated-button';
 import { AnimatedCard } from '@/components/ui/animated-card';
 import { FadeIn } from '@/components/ui/animations';
-import { ContactService, TemplateService, QuotaService, GroupService, AssetService, Contact, Template, Quota, ContactGroup, AssetFile } from '@/lib/services';
+import { Contact, Template, Quota, ContactGroup, AssetFile } from '@/lib/services/types';
 import {
   Send,
   MessageSquare,
@@ -32,187 +36,67 @@ interface SendPageProps {
   userName?: string;
 }
 
-export function SendPage({ userName }: SendPageProps) {
+// Placeholder content component for when data is loaded
+function SendPageContent({
+  contacts,
+  templates,
+  quota,
+  groups,
+  assets,
+  selectedGroupId,
+  setSelectedGroupId,
+  selectedTemplate,
+  setSelectedTemplate,
+  selectedAssets,
+  setSelectedAssets,
+  delayRange,
+  setDelayRange,
+  isSending,
+  sendResult,
+  simulateSend,
+  targetContacts,
+  selectedTemplateData,
+  selectedGroupData,
+  canSend,
+  previewMessage,
+  getTargetContacts,
+  getSelectedTemplate,
+  getSelectedGroup,
+  getSelectedAssets,
+  toggleAssetSelection,
+  getAssetIcon,
+  formatFileSize
+}: {
+  contacts: Contact[];
+  templates: Template[];
+  quota: Quota | null;
+  groups: ContactGroup[];
+  assets: AssetFile[];
+  selectedGroupId: string;
+  setSelectedGroupId: (id: string) => void;
+  selectedTemplate: string;
+  setSelectedTemplate: (id: string) => void;
+  selectedAssets: string[];
+  setSelectedAssets: (ids: string[]) => void;
+  delayRange: number[];
+  setDelayRange: (range: number[]) => void;
+  isSending: boolean;
+  sendResult: any;
+  simulateSend: () => void;
+  targetContacts: Contact[];
+  selectedTemplateData: Template | undefined;
+  selectedGroupData: ContactGroup | { name: string; color: string };
+  canSend: boolean;
+  previewMessage: () => string;
+  getTargetContacts: () => Contact[];
+  getSelectedTemplate: () => Template | undefined;
+  getSelectedGroup: () => ContactGroup | { name: string; color: string };
+  getSelectedAssets: () => AssetFile[];
+  toggleAssetSelection: (assetId: string) => void;
+  getAssetIcon: (category: AssetFile['category']) => React.ComponentType<any>;
+  formatFileSize: (bytes: number) => string;
+}) {
   const navigate = useNavigate();
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [quota, setQuota] = useState<Quota | null>(null);
-  const [groups, setGroups] = useState<ContactGroup[]>([]);
-  const [assets, setAssets] = useState<AssetFile[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
-  const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
-  const [delayRange, setDelayRange] = useState<number[]>([3]);
-  const [isSending, setIsSending] = useState(false);
-  const [sendResult, setSendResult] = useState<any>(null);
-
-  const contactService = new ContactService();
-  const templateService = new TemplateService();
-  const quotaService = new QuotaService();
-  const groupService = new GroupService();
-  const assetService = new AssetService();
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      const [contactsData, templatesData, quotaData, groupsData, assetsData] = await Promise.all([
-        contactService.getContacts(),
-        templateService.getTemplates(),
-        quotaService.getQuota('user_123'), // Mock user ID
-        groupService.getGroups(),
-        assetService.getAssets()
-      ]);
-
-      setContacts(contactsData);
-      setTemplates(templatesData);
-      setQuota(quotaData);
-      setGroups(groupsData);
-      setAssets(assetsData);
-    } catch (error) {
-      console.error('Failed to load data:', error);
-    }
-  };
-
-  const getTargetContacts = () => {
-    if (selectedGroupId === 'all') {
-      return contacts;
-    }
-    return contacts.filter(contact => contact.group_id === selectedGroupId);
-  };
-
-  const getSelectedTemplate = () => {
-    return templates.find(t => t.id === selectedTemplate);
-  };
-
-  const getSelectedGroup = () => {
-    if (selectedGroupId === 'all') {
-      return { name: 'All Contacts', color: '#6b7280' };
-    }
-    return groups.find(g => g.id === selectedGroupId) || { name: 'Unknown Group', color: '#6b7280' };
-  };
-
-  const getSelectedAssets = () => {
-    return assets.filter(asset => selectedAssets.includes(asset.id));
-  };
-
-  const toggleAssetSelection = (assetId: string) => {
-    setSelectedAssets(prev =>
-      prev.includes(assetId)
-        ? prev.filter(id => id !== assetId)
-        : [...prev, assetId]
-    );
-  };
-
-  const getAssetIcon = (category: AssetFile['category']) => {
-    switch (category) {
-      case 'image': return FileImage;
-      case 'video': return FileVideo;
-      case 'document': return FileText;
-      default: return FileImage;
-    }
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const simulateSend = async () => {
-    if (!selectedTemplate || !quota) return;
-
-    const targetContacts = getTargetContacts();
-    const selectedTemplateData = getSelectedTemplate();
-    const selectedGroupData = getSelectedGroup();
-
-    if (!selectedTemplateData) return;
-
-    setIsSending(true);
-    setSendResult(null);
-
-    try {
-      // Step 1: Reserve quota
-      const reserveResult = await quotaService.reserveQuota('user_123', targetContacts.length);
-
-      if (!reserveResult.success) {
-        throw new Error('Failed to reserve quota');
-      }
-
-      // Step 2: Simulate sending process
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Step 3: Generate mock results
-      const successCount = Math.floor(targetContacts.length * 0.9); // 90% success rate
-      const failedCount = targetContacts.length - successCount;
-
-      // Step 4: Commit quota usage
-      await quotaService.commitQuota(reserveResult.reservation_id, successCount);
-
-      // Step 5: Update local quota
-      const updatedQuota = {
-        ...quota,
-        messages_used: quota.messages_used + successCount,
-        remaining: quota.remaining - successCount
-      };
-      setQuota(updatedQuota);
-
-      setSendResult({
-        success: true,
-        totalContacts: targetContacts.length,
-        successCount,
-        failedCount,
-        templateName: selectedTemplateData.name,
-        groupName: selectedGroupData.name,
-        selectedAssets: getSelectedAssets(),
-        delayRange: delayRange[0],
-        reservationId: reserveResult.reservation_id
-      });
-
-    } catch (error) {
-      setSendResult({
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      });
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const previewMessage = () => {
-    const template = getSelectedTemplate();
-    if (!template) return '';
-
-    // Use random variant for preview to demonstrate randomization
-    const randomVariant = templateService.getRandomVariant(template);
-    let preview = randomVariant || '';
-
-    // Replace variables with example values
-    template.variables?.forEach(variable => {
-      const exampleValue = variable.includes('name') ? 'John Doe' :
-                         variable.includes('amount') ? '$100' :
-                         variable.includes('date') ? 'December 25, 2024' :
-                         variable.includes('event') ? 'Product Launch' :
-                         variable.includes('location') ? 'Jakarta Convention Center' :
-                         variable.includes('product') ? 'Amazing Product' :
-                         variable.includes('company') ? 'Your Company' :
-                         variable.includes('contact') ? '+62812345678' :
-                         `[${variable}]`;
-
-      preview = preview.replace(new RegExp(`\\{${variable}\\}`, 'g'), exampleValue);
-    });
-
-    return preview;
-  };
-
-  const targetContacts = getTargetContacts();
-  const selectedTemplateData = getSelectedTemplate();
-  const selectedGroupData = getSelectedGroup();
-  const canSend = selectedTemplate && targetContacts.length > 0 && quota && quota.remaining >= targetContacts.length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -261,7 +145,7 @@ export function SendPage({ userName }: SendPageProps) {
                           {groups.map((group) => (
                             <SelectItem key={group.id} value={group.id}>
                               <div className="flex items-center space-x-2">
-                                <div 
+                                <div
                                   className="w-3 h-3 rounded-full border"
                                   style={{ backgroundColor: group.color }}
                                 />
@@ -280,7 +164,7 @@ export function SendPage({ userName }: SendPageProps) {
                       </div>
                       {selectedGroupId !== 'all' && (
                         <div className="flex items-center space-x-2">
-                          <div 
+                          <div
                             className="w-3 h-3 rounded-full border"
                             style={{ backgroundColor: selectedGroupData.color }}
                           />
@@ -324,7 +208,7 @@ export function SendPage({ userName }: SendPageProps) {
                         <div className="flex items-center justify-between mb-2">
                           <Label>Template Info:</Label>
                           <Badge variant="secondary" className="text-xs">
-                            {selectedTemplateData.variants.length} variants
+                            {selectedTemplateData.variants?.length || 1} variants
                           </Badge>
                         </div>
 
@@ -643,5 +527,234 @@ export function SendPage({ userName }: SendPageProps) {
         </FadeIn>
       </div>
     </div>
+  );
+}
+
+export function SendPage({ userName }: SendPageProps) {
+  const { contactService, templateService, quotaService, groupService, assetService, isInitialized } = useServices();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [quota, setQuota] = useState<Quota | null>(null);
+  const [groups, setGroups] = useState<ContactGroup[]>([]);
+  const [assets, setAssets] = useState<AssetFile[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [selectedAssets, setSelectedAssets] = useState<string[]>([]);
+  const [delayRange, setDelayRange] = useState<number[]>([3]);
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const [contactsData, templatesData, quotaData, groupsData, assetsData] = await Promise.all([
+        contactService.getContacts(),
+        templateService.getTemplates(),
+        quotaService.getQuota('user_123'), // Mock user ID
+        groupService.getGroups(),
+        assetService.getAssets()
+      ]);
+
+      setContacts(contactsData);
+      setTemplates(templatesData);
+      setQuota(quotaData);
+      setGroups(groupsData);
+      setAssets(assetsData);
+    } catch (err) {
+      console.error('Failed to load data:', err);
+      const appError = handleServiceError(err, 'loadSendData');
+      setError(appError.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getTargetContacts = () => {
+    if (selectedGroupId === 'all') {
+      return contacts;
+    }
+    return contacts.filter(contact => contact.group_id === selectedGroupId);
+  };
+
+  const getSelectedTemplate = () => {
+    return templates.find(t => t.id === selectedTemplate);
+  };
+
+  const getSelectedGroup = () => {
+    if (selectedGroupId === 'all') {
+      return { name: 'All Contacts', color: '#6b7280' };
+    }
+    return groups.find(g => g.id === selectedGroupId) || { name: 'Unknown Group', color: '#6b7280' };
+  };
+
+  const getSelectedAssets = () => {
+    return assets.filter(asset => selectedAssets.includes(asset.id));
+  };
+
+  const toggleAssetSelection = (assetId: string) => {
+    setSelectedAssets(prev =>
+      prev.includes(assetId)
+        ? prev.filter(id => id !== assetId)
+        : [...prev, assetId]
+    );
+  };
+
+  const getAssetIcon = (category: AssetFile['category']) => {
+    switch (category) {
+      case 'image': return FileImage;
+      case 'video': return FileVideo;
+      case 'document': return FileText;
+      default: return FileImage;
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const simulateSend = async () => {
+    if (!selectedTemplate || !quota) return;
+
+    const targetContacts = getTargetContacts();
+    const selectedTemplateData = getSelectedTemplate();
+    const selectedGroupData = getSelectedGroup();
+
+    if (!selectedTemplateData) return;
+
+    setIsSending(true);
+    setSendResult(null);
+
+    try {
+      // Step 1: Reserve quota
+      const reserveResult = await quotaService.reserveQuota('user_123', targetContacts.length);
+
+      if (!reserveResult.success) {
+        throw new Error('Failed to reserve quota');
+      }
+
+      // Step 2: Simulate sending process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Step 3: Generate mock results
+      const successCount = Math.floor(targetContacts.length * 0.9); // 90% success rate
+      const failedCount = targetContacts.length - successCount;
+
+      // Step 4: Commit quota usage
+      await quotaService.commitQuota(reserveResult.reservation_id, successCount);
+
+      // Step 5: Update local quota
+      const updatedQuota = {
+        ...quota,
+        messages_used: quota.messages_used + successCount,
+        remaining: quota.remaining - successCount
+      };
+      setQuota(updatedQuota);
+
+      setSendResult({
+        success: true,
+        totalContacts: targetContacts.length,
+        successCount,
+        failedCount,
+        templateName: selectedTemplateData.name,
+        groupName: selectedGroupData.name,
+        selectedAssets: getSelectedAssets(),
+        delayRange: delayRange[0],
+        reservationId: reserveResult.reservation_id
+      });
+
+    } catch (error) {
+      setSendResult({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const previewMessage = () => {
+    const template = getSelectedTemplate();
+    if (!template) return '';
+
+    // Use random variant for preview to demonstrate randomization
+    const randomVariant = templateService.getRandomVariant(template);
+    let preview = randomVariant || '';
+
+    // Replace variables with example values
+    template.variables?.forEach(variable => {
+      const exampleValue = variable.includes('name') ? 'John Doe' :
+                         variable.includes('amount') ? '$100' :
+                         variable.includes('date') ? 'December 25, 2024' :
+                         variable.includes('event') ? 'Product Launch' :
+                         variable.includes('location') ? 'Jakarta Convention Center' :
+                         variable.includes('product') ? 'Amazing Product' :
+                         variable.includes('company') ? 'Your Company' :
+                         variable.includes('contact') ? '+62812345678' :
+                         `[${variable}]`;
+
+      preview = preview.replace(new RegExp(`\\{${variable}\\}`, 'g'), exampleValue);
+    });
+
+    return preview;
+  };
+
+  useEffect(() => {
+    if (isInitialized) {
+      loadData();
+    }
+  }, [isInitialized, contactService, templateService, quotaService, groupService, assetService]);
+
+  const targetContacts = getTargetContacts();
+  const selectedTemplateData = getSelectedTemplate();
+  const selectedGroupData = getSelectedGroup();
+  const canSend = selectedTemplate && targetContacts.length > 0 && quota && quota.remaining >= targetContacts.length;
+
+  if (isLoading) {
+    return <LoadingScreen message="Loading send configuration..." />;
+  }
+
+  if (error) {
+    return <ErrorScreen error={error} onRetry={loadData} />;
+  }
+
+  return (
+    <SendPageContent
+      contacts={contacts}
+      templates={templates}
+      quota={quota}
+      groups={groups}
+      assets={assets}
+      selectedGroupId={selectedGroupId}
+      setSelectedGroupId={setSelectedGroupId}
+      selectedTemplate={selectedTemplate}
+      setSelectedTemplate={setSelectedTemplate}
+      selectedAssets={selectedAssets}
+      setSelectedAssets={setSelectedAssets}
+      delayRange={delayRange}
+      setDelayRange={setDelayRange}
+      isSending={isSending}
+      sendResult={sendResult}
+      simulateSend={simulateSend}
+      targetContacts={targetContacts}
+      selectedTemplateData={selectedTemplateData}
+      selectedGroupData={selectedGroupData}
+      canSend={canSend}
+      previewMessage={previewMessage}
+      getTargetContacts={getTargetContacts}
+      getSelectedTemplate={getSelectedTemplate}
+      getSelectedGroup={getSelectedGroup}
+      getSelectedAssets={getSelectedAssets}
+      toggleAssetSelection={toggleAssetSelection}
+      getAssetIcon={getAssetIcon}
+      formatFileSize={formatFileSize}
+    />
   );
 }

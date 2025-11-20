@@ -10,7 +10,6 @@ import { AnimatedCard } from '@/components/ui/animated-card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FadeIn, Stagger } from '@/components/ui/animations';
@@ -21,17 +20,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { GroupService, ContactService, ContactGroup, Contact } from '@/lib/services';
+import { ContactGroup, Contact } from '@/lib/services';
+import { useServices } from '@/lib/services/ServiceContext';
+import { useToast } from '@/hooks/use-toast';
 import {
   ArrowLeft,
   Users,
   Plus,
   Edit,
   Trash2,
-  Palette,
   Hash,
   UserCheck,
-  UserX,
   Phone,
   Search
 } from 'lucide-react';
@@ -51,6 +50,9 @@ const GROUP_COLORS = [
 
 export function GroupPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const { groupService, contactService } = useServices();
+
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
@@ -58,7 +60,9 @@ export function GroupPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isManageContactsDialogOpen, setIsManageContactsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<ContactGroup | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<ContactGroup | null>(null);
   const [contactSearchQuery, setContactSearchQuery] = useState('');
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [formData, setFormData] = useState({
@@ -66,9 +70,6 @@ export function GroupPage() {
     description: '',
     color: GROUP_COLORS[0]
   });
-
-  const groupService = new GroupService();
-  const contactService = new ContactService();
 
   useEffect(() => {
     loadData();
@@ -85,6 +86,11 @@ export function GroupPage() {
       setContacts(contactsData);
     } catch (error) {
       console.error('Failed to load data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load groups and contacts",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -93,7 +99,11 @@ export function GroupPage() {
   const handleCreateGroup = async () => {
     try {
       if (!formData.name.trim()) {
-        alert('Group name is required');
+        toast({
+          title: "Validation Error",
+          description: "Group name is required",
+          variant: "destructive"
+        });
         return;
       }
 
@@ -106,16 +116,30 @@ export function GroupPage() {
       setGroups(prev => [...prev, newGroup]);
       setIsCreateDialogOpen(false);
       setFormData({ name: '', description: '', color: GROUP_COLORS[0] });
+
+      toast({
+        title: "Success",
+        description: "Group created successfully",
+        variant: "default"
+      });
     } catch (error) {
       console.error('Failed to create group:', error);
-      alert('Failed to create group');
+      toast({
+        title: "Error",
+        description: "Failed to create group",
+        variant: "destructive"
+      });
     }
   };
 
   const handleEditGroup = async () => {
     try {
       if (!selectedGroup || !formData.name.trim()) {
-        alert('Group name is required');
+        toast({
+          title: "Validation Error",
+          description: "Group name is required",
+          variant: "destructive"
+        });
         return;
       }
 
@@ -130,28 +154,57 @@ export function GroupPage() {
         setIsEditDialogOpen(false);
         setSelectedGroup(null);
         setFormData({ name: '', description: '', color: GROUP_COLORS[0] });
+
+        toast({
+          title: "Success",
+          description: "Group updated successfully",
+          variant: "default"
+        });
       }
     } catch (error) {
       console.error('Failed to update group:', error);
-      alert('Failed to update group');
+      toast({
+        title: "Error",
+        description: "Failed to update group",
+        variant: "destructive"
+      });
     }
   };
 
-  const handleDeleteGroup = async (groupId: string) => {
+  const handleDeleteGroup = async () => {
+    if (!groupToDelete) return;
+
     try {
-      const success = await groupService.deleteGroup(groupId);
+      const success = await groupService.deleteGroup(groupToDelete.id);
       if (success) {
-        setGroups(prev => prev.filter(g => g.id !== groupId));
+        setGroups(prev => prev.filter(g => g.id !== groupToDelete.id));
         // Also update contacts that belonged to this group
-        setContacts(prev => prev.map(contact => 
-          contact.group_id === groupId ? { ...contact, group_id: 'group_regular' } : contact
+        setContacts(prev => prev.map(contact =>
+          contact.group_id === groupToDelete.id ? { ...contact, group_id: 'group_regular' } : contact
         ));
+
+        setIsDeleteDialogOpen(false);
+        setGroupToDelete(null);
+
+        toast({
+          title: "Success",
+          description: "Group deleted successfully",
+          variant: "default"
+        });
       } else {
-        alert('Failed to delete group');
+        toast({
+          title: "Error",
+          description: "Failed to delete group",
+          variant: "destructive"
+        });
       }
     } catch (error) {
       console.error('Failed to delete group:', error);
-      alert('Failed to delete group');
+      toast({
+        title: "Error",
+        description: "Failed to delete group",
+        variant: "destructive"
+      });
     }
   };
 
@@ -161,19 +214,29 @@ export function GroupPage() {
       for (const contactId of contactIds) {
         await contactService.updateContact(contactId, { group_id: groupId });
       }
-      
+
       // Update local state
-      setContacts(prev => prev.map(contact => 
+      setContacts(prev => prev.map(contact =>
         contactIds.includes(contact.id) ? { ...contact, group_id: groupId } : contact
       ));
-      
+
       // Refresh group contact counts
       await loadData();
       setIsManageContactsDialogOpen(false);
       setSelectedContacts([]);
+
+      toast({
+        title: "Success",
+        description: `Successfully assigned ${contactIds.length} contacts to group`,
+        variant: "default"
+      });
     } catch (error) {
       console.error('Failed to assign contacts:', error);
-      alert('Failed to assign contacts to group');
+      toast({
+        title: "Error",
+        description: "Failed to assign contacts to group",
+        variant: "destructive"
+      });
     }
   };
 
@@ -202,9 +265,9 @@ export function GroupPage() {
   // Filter contacts for assignment
   useEffect(() => {
     if (!selectedGroup) return;
-    
+
     let filtered = contacts.filter(contact => contact.group_id !== selectedGroup.id);
-    
+
     if (contactSearchQuery) {
       filtered = filtered.filter(contact =>
         contact.name.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
@@ -212,7 +275,7 @@ export function GroupPage() {
         (contact.tags && contact.tags.some(tag => tag.toLowerCase().includes(contactSearchQuery.toLowerCase())))
       );
     }
-    
+
     setFilteredContacts(filtered);
   }, [contacts, contactSearchQuery, selectedGroup]);
 
@@ -226,15 +289,15 @@ export function GroupPage() {
       ...group,
       contact_count: getGroupContacts(group.id).length
     }));
-    
+
     return {
       total: totalContacts,
       groups: groupsWithCounts,
-      largestGroup: groupsWithCounts.reduce((largest, group) => 
-        (group.contact_count || 0) > (largest.contact_count || 0) ? group : largest, 
+      largestGroup: groupsWithCounts.reduce((largest, group) =>
+        (group.contact_count || 0) > (largest.contact_count || 0) ? group : largest,
         groupsWithCounts[0]
       ),
-      averageGroupSize: groupsWithCounts.length > 0 
+      averageGroupSize: groupsWithCounts.length > 0
         ? Math.round(groupsWithCounts.reduce((sum, group) => sum + (group.contact_count || 0), 0) / groupsWithCounts.length)
         : 0
     };
@@ -298,9 +361,8 @@ export function GroupPage() {
                       {GROUP_COLORS.map((color) => (
                         <button
                           key={color}
-                          className={`w-8 h-8 rounded-full border-2 ${
-                            formData.color === color ? 'border-gray-900' : 'border-gray-200'
-                          }`}
+                          className={`w-8 h-8 rounded-full border-2 ${formData.color === color ? 'border-gray-900' : 'border-gray-200'
+                            }`}
                           style={{ backgroundColor: color }}
                           onClick={() => setFormData(prev => ({ ...prev, color }))}
                         />
@@ -387,7 +449,7 @@ export function GroupPage() {
                       <TableRow key={group.id}>
                         <TableCell>
                           <div className="flex items-center space-x-3">
-                            <div 
+                            <div
                               className="w-4 h-4 rounded-full border"
                               style={{ backgroundColor: group.color }}
                             />
@@ -421,103 +483,21 @@ export function GroupPage() {
                                 <UserCheck className="h-4 w-4 mr-2" />
                                 Manage Contacts
                               </DropdownMenuItem>
-                              <Dialog open={isEditDialogOpen && selectedGroup?.id === group.id} onOpenChange={setIsEditDialogOpen}>
-                                <DialogTrigger asChild>
-                                  <DropdownMenuItem onClick={(e) => {
-                                    e.preventDefault();
-                                    openEditDialog(group);
-                                  }}>
-                                    <Edit className="h-4 w-4 mr-2" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Edit Group</DialogTitle>
-                                    <DialogDescription>
-                                      Update group details and appearance.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <div className="grid gap-4 py-4">
-                                    <div className="grid gap-2">
-                                      <Label htmlFor="edit-name">Group Name</Label>
-                                      <Input
-                                        id="edit-name"
-                                        value={formData.name}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                                        placeholder="e.g., VIP Customers"
-                                      />
-                                    </div>
-                                    <div className="grid gap-2">
-                                      <Label htmlFor="edit-description">Description (Optional)</Label>
-                                      <Textarea
-                                        id="edit-description"
-                                        value={formData.description}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                                        placeholder="Brief description of this group"
-                                        rows={3}
-                                      />
-                                    </div>
-                                    <div className="grid gap-2">
-                                      <Label>Color</Label>
-                                      <div className="flex flex-wrap gap-2">
-                                        {GROUP_COLORS.map((color) => (
-                                          <button
-                                            key={color}
-                                            className={`w-8 h-8 rounded-full border-2 ${
-                                              formData.color === color ? 'border-gray-900' : 'border-gray-200'
-                                            }`}
-                                            style={{ backgroundColor: color }}
-                                            onClick={() => setFormData(prev => ({ ...prev, color }))}
-                                          />
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <DialogFooter>
-                                    <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                                      Cancel
-                                    </Button>
-                                    <Button onClick={handleEditGroup}>
-                                      Update Group
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
+                              <DropdownMenuItem onClick={() => openEditDialog(group)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem
-                                    onClick={(e) => e.preventDefault()}
-                                    className="text-red-600 focus:text-red-600"
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete Group</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to delete "{group.name}"? This action cannot be undone.
-                                      {getGroupContacts(group.id).length > 0 && (
-                                        <span className="text-red-600 font-medium block mt-2">
-                                          Warning: This group contains {getGroupContacts(group.id).length} contacts. They will be moved to the default group.
-                                        </span>
-                                      )}
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => handleDeleteGroup(group.id)}
-                                      className="bg-red-600 hover:bg-red-700"
-                                    >
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={() => {
+                                  setGroupToDelete(group);
+                                  setIsDeleteDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -529,112 +509,191 @@ export function GroupPage() {
             </CardContent>
           </AnimatedCard>
         </FadeIn>
-      </div>
 
-      {/* Manage Contacts Dialog */}
-      <Dialog open={isManageContactsDialogOpen} onOpenChange={setIsManageContactsDialogOpen}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Manage Contacts - {selectedGroup?.name}</DialogTitle>
-            <DialogDescription>
-              Add or remove contacts from this group. Select contacts below and assign them to this group.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedGroup && (
+        {/* Edit Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Group</DialogTitle>
+              <DialogDescription>
+                Update group details and appearance.
+              </DialogDescription>
+            </DialogHeader>
             <div className="grid gap-4 py-4">
-              {/* Current Group Members */}
-              <div>
-                <Label className="text-sm font-medium">Current Members ({getGroupContacts(selectedGroup.id).length})</Label>
-                <div className="mt-2 max-h-32 overflow-y-auto border rounded p-2">
-                  {getGroupContacts(selectedGroup.id).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No contacts in this group</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1">
-                      {getGroupContacts(selectedGroup.id).map((contact) => (
-                        <Badge key={contact.id} variant="outline" className="text-xs">
-                          {contact.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-name">Group Name</Label>
+                <Input
+                  id="edit-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., VIP Customers"
+                />
               </div>
-
-              {/* Contact Search and Selection */}
-              <div>
-                <Label className="text-sm font-medium">Available Contacts</Label>
-                <div className="mt-2">
-                  <div className="relative mb-4">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search contacts to add..."
-                      value={contactSearchQuery}
-                      onChange={(e) => setContactSearchQuery(e.target.value)}
-                      className="pl-10"
+              <div className="grid gap-2">
+                <Label htmlFor="edit-description">Description (Optional)</Label>
+                <Textarea
+                  id="edit-description"
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Brief description of this group"
+                  rows={3}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Color</Label>
+                <div className="flex flex-wrap gap-2">
+                  {GROUP_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      className={`w-8 h-8 rounded-full border-2 ${formData.color === color ? 'border-gray-900' : 'border-gray-200'
+                        }`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setFormData(prev => ({ ...prev, color }))}
                     />
-                  </div>
-                  
-                  <div className="max-h-64 overflow-y-auto border rounded">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">Select</TableHead>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Phone</TableHead>
-                          <TableHead>Current Group</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredContacts.map((contact) => (
-                          <TableRow key={contact.id}>
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedContacts.includes(contact.id)}
-                                onCheckedChange={(checked) => {
-                                  if (checked) {
-                                    setSelectedContacts(prev => [...prev, contact.id]);
-                                  } else {
-                                    setSelectedContacts(prev => prev.filter(id => id !== contact.id));
-                                  }
-                                }}
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium">{contact.name}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center space-x-2">
-                                <Phone className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-sm">{contact.phone}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-xs">
-                                {groups.find(g => g.id === contact.group_id)?.name || 'Unknown'}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>
-          )}
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsManageContactsDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => selectedGroup && handleAssignContactsToGroup(selectedGroup.id, selectedContacts)}
-              disabled={selectedContacts.length === 0}
-            >
-              Assign {selectedContacts.length} Contact(s) to Group
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleEditGroup}>
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Manage Contacts Dialog */}
+        <Dialog open={isManageContactsDialogOpen} onOpenChange={setIsManageContactsDialogOpen}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Manage Contacts - {selectedGroup?.name}</DialogTitle>
+              <DialogDescription>
+                Add or remove contacts from this group. Select contacts below and assign them to this group.
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedGroup && (
+              <div className="grid gap-4 py-4">
+                {/* Current Group Members */}
+                <div>
+                  <Label className="text-sm font-medium">Current Members ({getGroupContacts(selectedGroup.id).length})</Label>
+                  <div className="mt-2 max-h-32 overflow-y-auto border rounded p-2">
+                    {getGroupContacts(selectedGroup.id).length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No contacts in this group</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {getGroupContacts(selectedGroup.id).map((contact) => (
+                          <Badge key={contact.id} variant="outline" className="text-xs">
+                            {contact.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contact Search and Selection */}
+                <div>
+                  <Label className="text-sm font-medium">Available Contacts</Label>
+                  <div className="mt-2">
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search contacts to add..."
+                        value={contactSearchQuery}
+                        onChange={(e) => setContactSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto border rounded">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">Select</TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Phone</TableHead>
+                            <TableHead>Current Group</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredContacts.map((contact) => (
+                            <TableRow key={contact.id}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedContacts.includes(contact.id)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setSelectedContacts(prev => [...prev, contact.id]);
+                                    } else {
+                                      setSelectedContacts(prev => prev.filter(id => id !== contact.id));
+                                    }
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">{contact.name}</TableCell>
+                              <TableCell>
+                                <div className="flex items-center space-x-2">
+                                  <Phone className="h-3 w-3 text-muted-foreground" />
+                                  <span className="text-sm">{contact.phone}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">
+                                  {groups.find(g => g.id === contact.group_id)?.name || 'Unknown'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsManageContactsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => selectedGroup && handleAssignContactsToGroup(selectedGroup.id, selectedContacts)}
+                disabled={selectedContacts.length === 0}
+              >
+                Assign {selectedContacts.length} Contact(s) to Group
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the group
+                "{groupToDelete?.name}". Contacts in this group will be moved to the default group.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                setIsDeleteDialogOpen(false);
+                setGroupToDelete(null);
+              }}>
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteGroup} className="bg-red-600 hover:bg-red-700">
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }

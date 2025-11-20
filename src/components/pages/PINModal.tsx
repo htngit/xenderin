@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,21 +7,51 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AnimatedButton } from '@/components/ui/animated-button';
 import { FadeIn } from '@/components/ui/animations';
 import { PINValidation } from '@/lib/services/types';
-import { Lock, Shield, User } from 'lucide-react';
+import { Lock, Shield, User, ChevronDown } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface PINModalProps {
-  onPINValidated: (pinData: PINValidation) => void;
+  onPINValidated: (pinData: PINValidation, accountId: string) => void;
   userName: string;
+  userId?: string; // Optional userId to identify the owner account
 }
 
-export function PINModal({ onPINValidated, userName }: PINModalProps) {
+interface AccountOption {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedAccount, setSelectedAccount] = useState<string>('');
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+
+  // Initialize accounts
+  useEffect(() => {
+    // In a real implementation, this would fetch teams/accounts the user belongs to
+    // For now, we default to the Owner account as requested
+    const ownerAccount: AccountOption = {
+      id: userId || 'owner-account', // Use actual userId if available
+      name: 'Owner', // Default display name as requested
+      role: 'owner'
+    };
+
+    setAccounts([ownerAccount]);
+    setSelectedAccount(ownerAccount.id);
+  }, [userId, userName]);
 
   const handlePINChange = (index: number, value: string) => {
     if (value.length > 1) return; // Only allow single digit
-    
+
     const newPin = [...pin];
     newPin[index] = value;
     setPin(newPin);
@@ -52,11 +82,16 @@ export function PINModal({ onPINValidated, userName }: PINModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const pinString = pin.join('');
-    
+
     if (pinString.length !== 6) {
       setError('Please enter all 6 digits');
+      return;
+    }
+
+    if (!selectedAccount) {
+      setError('Please select an account');
       return;
     }
 
@@ -67,14 +102,16 @@ export function PINModal({ onPINValidated, userName }: PINModalProps) {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Mock validation - default PIN is 123456
+      // Default PIN Logic for Owner:
+      // If the user is an Owner and no specific PIN is set (simulated here),
+      // we accept '123456' as the default PIN to allow initial access.
       if (pinString === '123456') {
         onPINValidated({
           is_valid: true,
-          role: 'owner' // Default role for Phase 1
-        });
+          role: 'owner'
+        }, selectedAccount);
       } else {
-        setError('Invalid PIN. Please use 123456 for demo.');
+        setError('Invalid PIN. Default PIN for Owner is 123456.');
       }
     } catch (err) {
       setError('PIN validation failed. Please try again.');
@@ -86,11 +123,11 @@ export function PINModal({ onPINValidated, userName }: PINModalProps) {
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').slice(0, 6);
-    
+
     if (/^\d+$/.test(pastedData)) {
       const newPin = pastedData.split('').concat(Array(6 - pastedData.length).fill(''));
       setPin(newPin);
-      
+
       // Focus last filled input
       const lastIndex = pastedData.length - 1;
       if (lastIndex < 6) {
@@ -114,11 +151,37 @@ export function PINModal({ onPINValidated, userName }: PINModalProps) {
               Enter PIN
             </CardTitle>
             <CardDescription>
-              Welcome back, {userName}! Please enter your 6-digit PIN to continue
+              Welcome back, {userName}! Please select your account and enter PIN
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+
+              {/* Account Selection */}
+              <div className="space-y-2">
+                <Label>Select Account</Label>
+                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          <span>{account.name}</span>
+                          {account.role === 'owner' && (
+                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                              Owner
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-4">
                 <Label className="text-center block">Security PIN</Label>
                 <div className="flex justify-center gap-2" onPaste={handlePaste}>
@@ -147,9 +210,9 @@ export function PINModal({ onPINValidated, userName }: PINModalProps) {
               )}
 
               <div className="space-y-3">
-                <AnimatedButton 
-                  type="submit" 
-                  className="w-full" 
+                <AnimatedButton
+                  type="submit"
+                  className="w-full"
                   disabled={isLoading}
                   animation="scale"
                 >

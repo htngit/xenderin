@@ -8,14 +8,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { BubbleBackground } from '@/components/ui/bubble';
 import { AuthService, AuthResponse } from '@/lib/services';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Eye, 
-  EyeOff, 
-  Lock, 
-  Mail, 
-  UserPlus, 
-  ArrowLeft, 
-  CheckCircle, 
+import {
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  UserPlus,
+  ArrowLeft,
+  CheckCircle,
   AlertCircle,
   Loader2,
   Send
@@ -23,12 +23,11 @@ import {
 
 interface LoginPageProps {
   onLoginSuccess: (authData: AuthResponse) => void;
+  initialView?: ViewType;
 }
 
-type ViewType = 'login' | 'register' | 'forgot-password' | 'success-register' | 'success-reset';
-
-export function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const [currentView, setCurrentView] = useState<ViewType>('login');
+export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPageProps) {
+  const [currentView, setCurrentView] = useState<ViewType>(initialView);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -100,15 +99,15 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         // If it's not a timeout/retryable error, don't retry
         if (!err.message?.includes('timeout') &&
-            !err.message?.includes('504') &&
-            !err.message?.includes('network') &&
-            !err.message?.includes('fetch')) {
+          !err.message?.includes('504') &&
+          !err.message?.includes('network') &&
+          !err.message?.includes('fetch')) {
           break;
         }
 
         // Wait before retry (exponential backoff)
         if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 500); // Max 5 seconds
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -144,7 +143,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   return (
     <div className="min-h-screen relative overflow-hidden">
       <BubbleBackground interactive={true} className="absolute inset-0" />
-      
+
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <AnimatePresence mode="wait">
           {currentView === 'login' && (

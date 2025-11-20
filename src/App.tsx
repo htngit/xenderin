@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { LoginPage } from '@/components/pages/LoginPage';
-import { ResetPasswordPage } from '@/components/pages/ResetPasswordPage';
+// RegisterPage, ForgotPasswordPage, ResetPasswordPage are handled within LoginPage
+// import { RegisterPage } from '@/components/pages/RegisterPage';
+// import { ForgotPasswordPage } from '@/components/pages/ForgotPasswordPage';
+// import { ResetPasswordPage } from '@/components/pages/ResetPasswordPage';
 import { PINModal } from '@/components/pages/PINModal';
 import { Dashboard } from '@/components/pages/Dashboard';
 import { ContactsPage } from '@/components/pages/ContactsPage';
@@ -13,164 +16,122 @@ import { SendPage } from '@/components/pages/SendPage';
 import { HistoryPage } from '@/components/pages/HistoryPage';
 import { GroupPage } from '@/components/pages/GroupPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
+import { ServiceProvider } from '@/lib/services/ServiceContext';
 import { AuthResponse, PINValidation } from '@/lib/services';
 import { AuthService } from '@/lib/services/AuthService';
-import { rpcHelpers, supabase } from '@/lib/supabase';
+import { rpcHelpers } from '@/lib/supabase';
 import { Toaster } from '@/components/ui/toaster';
+import { UserProvider } from '@/lib/security/UserProvider';
 
-// Main application layout component with shared state
-const MainApp = ({
-  authData,
-  pinData,
-  onLoginSuccess,
-  onPINValidated,
-  onLogout
+// Public routes component
+const PublicRoutes = ({
+  onLoginSuccess
 }: {
-  authData: AuthResponse | null;
-  pinData: PINValidation | null;
   onLoginSuccess: (data: AuthResponse) => void;
-  onPINValidated: (data: PINValidation) => void;
-  onLogout: () => void;
 }) => {
-  // Check if user is authenticated (has authData and pinData)
-  const isAuthenticated = authData !== null;
-  const isPINValidated = pinData !== null;
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Render PIN modal if user is authenticated but PIN not validated */}
-      {isAuthenticated && !isPINValidated && (
-        <PINModal
-          onPINValidated={onPINValidated}
-          userName={authData?.user.name || 'User'}
-        />
-      )}
-
-      {/* Main content area */}
-      <Routes>
-        {/* Public routes */}
-        <Route
-          path="/login"
-          element={
-            !isAuthenticated ? (
-              <LoginPage onLoginSuccess={onLoginSuccess} />
-            ) : !isPINValidated ? (
-              <LoginPage onLoginSuccess={onLoginSuccess} />
-            ) : (
-              <Navigate to="/dashboard" replace />
-            )
-          }
-        />
-        
-        {/* Reset Password - Public route */}
-        <Route
-          path="/reset-password"
-          element={<ResetPasswordPage />}
-        />
-
-        {/* Protected routes - only accessible after PIN validation */}
-        <Route
-          path="/dashboard"
-          element={
-            isPINValidated ? (
-              <Dashboard
-                userName={authData?.user.name || 'User'}
-                onLogout={onLogout}
-              />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/contacts"
-          element={
-            isPINValidated ? (
-              <ContactsPage />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/templates"
-          element={
-            isPINValidated ? (
-              <TemplatesPage />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/assets"
-          element={
-            isPINValidated ? (
-              <AssetPage />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/send"
-          element={
-            isPINValidated ? (
-              <SendPage
-                userName={authData?.user.name || 'User'}
-              />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/history"
-          element={
-            isPINValidated ? (
-              <HistoryPage />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/groups"
-          element={
-            isPINValidated ? (
-              <GroupPage />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            isPINValidated ? (
-              <SettingsPage userName={authData?.user.name || 'User'} />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-
-        {/* Default route */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
-      </Routes>
-      
-      {/* Toast notifications */}
-      <Toaster />
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage onLoginSuccess={onLoginSuccess} initialView="login" />} />
+      <Route path="/register" element={<LoginPage onLoginSuccess={onLoginSuccess} initialView="register" />} />
+      <Route path="/forgot-password" element={<LoginPage onLoginSuccess={onLoginSuccess} initialView="forgot-password" />} />
+      {/* Reset Password flow to be implemented or handled via deep link to a specific view */}
+      <Route path="/reset-password" element={<LoginPage onLoginSuccess={onLoginSuccess} initialView="login" />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 };
 
-// Main App component with routing
-const AppRoutes = () => {
+// Protected routes component
+const ProtectedRoutes = ({
+  authData,
+  onLogout
+}: {
+  authData: AuthResponse | null;
+  onLogout: () => void;
+}) => {
+  return (
+    <Routes>
+      {/* Dashboard initializes services, so it sits outside ServiceProvider */}
+      <Route
+        path="/dashboard"
+        element={
+          <Dashboard
+            userName={authData?.user.name || 'User'}
+            onLogout={onLogout}
+          />
+        }
+      />
+
+      {/* Other pages consume services via ServiceProvider */}
+      <Route
+        path="/contacts"
+        element={
+          <ServiceProvider>
+            <ContactsPage />
+          </ServiceProvider>
+        }
+      />
+      <Route
+        path="/templates"
+        element={
+          <ServiceProvider>
+            <TemplatesPage />
+          </ServiceProvider>
+        }
+      />
+      <Route
+        path="/assets"
+        element={
+          <ServiceProvider>
+            <AssetPage />
+          </ServiceProvider>
+        }
+      />
+      <Route
+        path="/send"
+        element={
+          <ServiceProvider>
+            <SendPage userName={authData?.user.name || 'User'} />
+          </ServiceProvider>
+        }
+      />
+      <Route
+        path="/history"
+        element={
+          <ServiceProvider>
+            <HistoryPage />
+          </ServiceProvider>
+        }
+      />
+      <Route
+        path="/groups"
+        element={
+          <ServiceProvider>
+            <GroupPage />
+          </ServiceProvider>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ServiceProvider>
+            <SettingsPage userName={authData?.user.name || 'User'} />
+          </ServiceProvider>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+};
+
+// Main App Logic
+const MainApp = () => {
   const [authData, setAuthData] = useState<AuthResponse | null>(null);
   const [pinData, setPinData] = useState<PINValidation | null>(null);
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
 
-  // Restore session on app load
+  // Restore session on load
   useEffect(() => {
     const restoreSession = async () => {
       try {
@@ -178,81 +139,96 @@ const AppRoutes = () => {
         const user = await authService.getCurrentUser();
 
         if (user) {
-          // Get current session to include access token for proper user context initialization
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          // We have a user, but we don't have quota yet (fetched after PIN)
+          // However, we need to set authData to consider them "authenticated"
+          setAuthData({
+            user,
+            token: '', // Token handled by provider
+            // quota is optional now
+          });
 
-          if (sessionError) {
-            console.warn('Failed to get session:', sessionError);
-          }
-
-          // Ensure user context is properly initialized with session token
-          await authService.setCurrentUser(user, session?.access_token);
-
-          // Get user quota
-          const quotaData = await rpcHelpers.getUserQuota(user.id);
-          const quota = quotaData[0];
-
-          if (quota) {
-            setAuthData({
-              user,
-              token: session?.access_token || '', // Include actual token
-              quota
-            });
-
-            // For demo purposes, auto-validate PIN on session restore
-            setPinData({
-              is_valid: true,
-              role: user.role || 'owner'
-            });
-          }
+          // Note: We do NOT auto-validate PIN here. 
+          // User must enter PIN every time they reload/re-open app (Architecture Requirement)
         }
       } catch (error) {
         console.error('Failed to restore session:', error);
-        // Don't set state on error - user will need to login again
+      } finally {
+        setIsRestoringSession(false);
       }
     };
 
     restoreSession();
   }, []);
 
-  // Handle login success - navigate to PIN modal
   const handleLoginSuccess = (data: AuthResponse) => {
     setAuthData(data);
+    // Do NOT set PIN data yet. User must enter PIN.
   };
 
-  // Handle PIN validation - navigate to dashboard
-  const handlePINValidated = (data: PINValidation) => {
-    setPinData(data);
+  const handlePINValidated = async (data: PINValidation, accountId: string) => {
+    // 1. Fetch account metadata (Quota, etc.) now that we have access
+    try {
+      const authService = new AuthService();
+      const { quota } = await authService.getAccountMetadata(accountId);
+
+      // 2. Update authData with the fetched quota
+      setAuthData(prev => prev ? { ...prev, quota } : null);
+
+      // 3. Set PIN data to unlock the UI
+      setPinData(data);
+    } catch (error) {
+      console.error("Failed to load account data after PIN:", error);
+      // Handle error (maybe show toast)
+    }
   };
 
-  // Handle logout - reset state and go back to login
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const authService = new AuthService();
+    await authService.logout();
     setAuthData(null);
     setPinData(null);
   };
 
+  if (isRestoringSession) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
+
+  const isAuthenticated = !!authData?.user;
+  const isPINValidated = !!pinData?.is_valid;
+
   return (
-    <MainApp
-      authData={authData}
-      pinData={pinData}
-      onLoginSuccess={handleLoginSuccess}
-      onPINValidated={handlePINValidated}
-      onLogout={handleLogout}
-    />
+    <Router>
+      <div className="min-h-screen bg-background font-sans antialiased">
+        {!isAuthenticated ? (
+          // 1. Not Authenticated -> Public Routes
+          <PublicRoutes onLoginSuccess={handleLoginSuccess} />
+        ) : !isPINValidated ? (
+          // 2. Authenticated but Locked -> PIN Modal
+          // We render this as a full-screen overlay or the only content
+          <div className="fixed inset-0 z-50 bg-background flex items-center justify-center">
+            <PINModal
+              onPINValidated={handlePINValidated}
+              userName={authData?.user.name || 'User'}
+              userId={authData?.user.id}
+            />
+          </div>
+        ) : (
+          // 3. Authenticated & Unlocked -> Protected Routes
+          <ProtectedRoutes
+            authData={authData}
+            onLogout={handleLogout}
+          />
+        )}
+        <Toaster />
+      </div>
+    </Router>
   );
 };
 
-// Wrapper component to use hooks
-function AppContent() {
-  return (
-    <AppRoutes />
-  );
-}
-
 export default function App() {
   return (
-    <Router>
-      <AppContent />
-    </Router>
+    <UserProvider>
+      <MainApp />
+    </UserProvider>
   );
 }

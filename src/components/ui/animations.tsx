@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -12,10 +13,10 @@ interface FadeInProps {
   triggerKey?: string | number; // Key to trigger re-animation
 }
 
-export function FadeIn({ 
-  children, 
-  className, 
-  delay = 0, 
+export function FadeIn({
+  children,
+  className,
+  delay = 0,
   duration = 0.5,
   direction = 'up',
   triggerKey
@@ -66,23 +67,23 @@ export function FadeIn({
 }
 
 interface StaggerProps {
-  children: React.ReactNode[];
+  children: React.ReactNode | React.ReactNode[];
   className?: string;
   staggerDelay?: number;
   initialDelay?: number;
 }
 
-export function Stagger({ 
-  children, 
-  className, 
+export function Stagger({
+  children,
+  className,
   staggerDelay = 0.1,
   initialDelay = 0
 }: StaggerProps) {
   return (
     <div className={cn(className)}>
-      {children.map((child, index) => (
-        <FadeIn 
-          key={index} 
+      {React.Children.map(children, (child, index) => (
+        <FadeIn
+          key={index}
           delay={initialDelay + (index * staggerDelay)}
         >
           {child}

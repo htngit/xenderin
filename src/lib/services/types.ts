@@ -164,7 +164,7 @@ export interface SendConfig {
 export interface AuthResponse {
   user: User;
   token: string;
-  quota: Quota;
+  quota?: Quota;
 }
 
 export interface PINValidation {

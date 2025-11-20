@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../supabase';
 import { SubscriptionPlan, PaymentSession } from './types';
 import { userContextManager } from '../security/UserContextManager';
 
@@ -9,30 +9,24 @@ import { userContextManager } from '../security/UserContextManager';
  * Fixed authentication integration with UserContextManager
  */
 export class PaymentService {
-  private supabase: any;
+  private supabase: typeof supabase;
 
   constructor() {
-    this.supabase = createClient(
-      import.meta.env.VITE_SUPABASE_URL,
-      import.meta.env.VITE_SUPABASE_ANON_KEY
-    );
+    this.supabase = supabase;
   }
 
-  /**
-   * Check online status with improved detection
-   */
   private async checkOnlineStatus(): Promise<boolean> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
+
       // Try multiple endpoints for better reliability
       const endpoints = [
         '/api/ping',
         `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/`,
         '/health'
       ];
-      
+
       for (const endpoint of endpoints) {
         try {
           const response = await fetch(endpoint, {
@@ -40,14 +34,14 @@ export class PaymentService {
             cache: 'no-cache',
             signal: controller.signal
           });
-          
+
           clearTimeout(timeoutId);
           if (response.ok) return true;
         } catch (e) {
           continue;
         }
       }
-      
+
       return false;
     } catch (error) {
       console.log('Network check failed, assuming offline mode:', error);
@@ -72,7 +66,7 @@ export class PaymentService {
 
       // Check online status
       const isOnline = await this.checkOnlineStatus();
-      
+
       if (!isOnline) {
         throw new Error('Payment creation requires an active internet connection');
       }
@@ -110,11 +104,11 @@ export class PaymentService {
 
     } catch (error) {
       console.error('Payment creation error:', error);
-      
+
       if (error instanceof Error) {
         throw error;
       }
-      
+
       throw new Error('Payment creation failed - please try again');
     }
   }
@@ -130,7 +124,7 @@ export class PaymentService {
 
       // Check online status
       const isOnline = await this.checkOnlineStatus();
-      
+
       if (isOnline) {
         const { data, error } = await this.supabase
           .from('payments')
@@ -173,11 +167,11 @@ export class PaymentService {
 
     } catch (error) {
       console.error('Get payment status error:', error);
-      
+
       if (error instanceof Error) {
         throw error;
       }
-      
+
       throw new Error('Failed to get payment status');
     }
   }
@@ -196,7 +190,7 @@ export class PaymentService {
 
     // Check online status
     const isOnline = await this.checkOnlineStatus();
-    
+
     if (!isOnline) {
       console.log('Offline mode: cannot subscribe to real-time payment updates');
       // Return a mock subscription that does nothing
@@ -222,7 +216,7 @@ export class PaymentService {
         },
         (payload: any) => {
           console.log('Payment update received:', payload);
-          
+
           const updatedPayment = payload.new;
           const paymentSession: PaymentSession = {
             paymentId: updatedPayment.id,
@@ -271,7 +265,7 @@ export class PaymentService {
 
       // Check online status
       const isOnline = await this.checkOnlineStatus();
-      
+
       if (!isOnline) {
         throw new Error('Payment cancellation requires an active internet connection');
       }
@@ -294,11 +288,11 @@ export class PaymentService {
 
     } catch (error) {
       console.error('Cancel payment error:', error);
-      
+
       if (error instanceof Error) {
         throw error;
       }
-      
+
       throw new Error('Failed to cancel payment');
     }
   }
@@ -314,7 +308,7 @@ export class PaymentService {
 
       // Check online status
       const isOnline = await this.checkOnlineStatus();
-      
+
       if (isOnline) {
         const currentUserId = await this.getCurrentUserId();
         if (!currentUserId) {
@@ -350,11 +344,11 @@ export class PaymentService {
 
     } catch (error) {
       console.error('Get payment history error:', error);
-      
+
       if (error instanceof Error) {
         throw error;
       }
-      
+
       throw new Error('Failed to get payment history');
     }
   }

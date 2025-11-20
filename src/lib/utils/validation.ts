@@ -4,7 +4,7 @@
  * for consistent data integrity across all services.
  */
 
-import { Contact, ContactGroup, Template, ActivityLog, AssetFile, Quota, QuotaReservation } from '../services/types';
+import { Contact, ContactGroup, Template, ActivityLog, AssetFile, Quota } from '../services/types';
 
 /**
  * Type guard for validating UUID format
@@ -62,20 +62,20 @@ export function sanitizeString(value: any, fieldName: string, maxLength?: number
   if (value === null || value === undefined) {
     return '';
   }
-  
+
   if (typeof value !== 'string') {
     console.warn(`Field ${fieldName} is not a string, converting to string:`, value);
     value = String(value);
   }
-  
+
   // Remove potential XSS characters
   value = value.replace(/[<>\"']/g, '');
-  
+
   if (maxLength && value.length > maxLength) {
     console.warn(`Field ${fieldName} exceeds max length ${maxLength}, truncating`);
     value = value.substring(0, maxLength);
   }
-  
+
   return value.trim();
 }
 
@@ -86,15 +86,15 @@ export function sanitizeBoolean(value: any, fieldName: string): boolean {
   if (typeof value === 'boolean') {
     return value;
   }
-  
+
   if (value === 'true' || value === '1' || value === 1) {
     return true;
   }
-  
+
   if (value === 'false' || value === '0' || value === 0) {
     return false;
   }
-  
+
   console.warn(`Field ${fieldName} is not a valid boolean, defaulting to false:`, value);
   return false;
 }
@@ -114,14 +114,14 @@ export function sanitizeNumber(value: any, fieldName: string, min?: number, max?
     }
     return value;
   }
-  
+
   if (typeof value === 'string') {
     const numValue = parseFloat(value);
     if (!isNaN(numValue)) {
       return sanitizeNumber(numValue, fieldName, min, max);
     }
   }
-  
+
   console.warn(`Field ${fieldName} is not a valid number, defaulting to 0:`, value);
   return 0;
 }
@@ -134,7 +134,7 @@ export function sanitizeArray<T>(value: any, fieldName: string, validator?: (ite
     console.warn(`Field ${fieldName} is not an array, defaulting to empty array:`, value);
     return [];
   }
-  
+
   if (validator) {
     const filtered = value.filter(validator);
     if (filtered.length !== value.length) {
@@ -142,7 +142,7 @@ export function sanitizeArray<T>(value: any, fieldName: string, validator?: (ite
     }
     return filtered;
   }
-  
+
   return value;
 }
 
@@ -154,7 +154,7 @@ export function validateContact(data: any): Contact | null {
     console.error('Contact data is not a valid object:', data);
     return null;
   }
-  
+
   try {
     const validated: Contact = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
@@ -170,7 +170,7 @@ export function validateContact(data: any): Contact | null {
       created_at: String(data.created_at),
       updated_at: String(data.updated_at)
     };
-    
+
     return validated;
   } catch (error) {
     console.error('Error validating contact data:', error, data);
@@ -186,7 +186,7 @@ export function validateGroup(data: any): ContactGroup | null {
     console.error('Group data is not a valid object:', data);
     return null;
   }
-  
+
   try {
     const validated: ContactGroup = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
@@ -200,7 +200,7 @@ export function validateGroup(data: any): ContactGroup | null {
       created_at: String(data.created_at),
       updated_at: String(data.updated_at)
     };
-    
+
     return validated;
   } catch (error) {
     console.error('Error validating group data:', error, data);
@@ -216,7 +216,7 @@ export function validateTemplate(data: any): Template | null {
     console.error('Template data is not a valid object:', data);
     return null;
   }
-  
+
   try {
     const validated: Template = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
@@ -234,7 +234,7 @@ export function validateTemplate(data: any): Template | null {
       updated_at: String(data.updated_at),
       assets: sanitizeArray(data.assets, 'assets')
     };
-    
+
     return validated;
   } catch (error) {
     console.error('Error validating template data:', error, data);
@@ -250,11 +250,11 @@ export function validateActivityLog(data: any): ActivityLog | null {
     console.error('Activity log data is not a valid object:', data);
     return null;
   }
-  
+
   try {
     const validStatuses = ['pending', 'running', 'completed', 'failed'] as const;
     const status = validStatuses.includes(data.status) ? data.status : 'pending';
-    
+
     const validated: ActivityLog = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
       user_id: isValidUUID(data.user_id) ? data.user_id : '',
@@ -275,7 +275,7 @@ export function validateActivityLog(data: any): ActivityLog | null {
       created_at: String(data.created_at),
       updated_at: String(data.updated_at)
     };
-    
+
     return validated;
   } catch (error) {
     console.error('Error validating activity log data:', error, data);
@@ -291,11 +291,11 @@ export function validateAssetFile(data: any): AssetFile | null {
     console.error('Asset file data is not a valid object:', data);
     return null;
   }
-  
+
   try {
     const validCategories = ['image', 'video', 'audio', 'document', 'other'] as const;
     const category = validCategories.includes(data.category) ? data.category : 'other';
-    
+
     const validated: AssetFile = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
       name: sanitizeString(data.name, 'name', 255),
@@ -305,7 +305,7 @@ export function validateAssetFile(data: any): AssetFile | null {
       url: data.url ? sanitizeString(data.url, 'url', 1000) : undefined,
       category
     };
-    
+
     return validated;
   } catch (error) {
     console.error('Error validating asset file data:', error, data);
@@ -321,11 +321,11 @@ export function validateQuota(data: any): Quota | null {
     console.error('Quota data is not a valid object:', data);
     return null;
   }
-  
+
   try {
     const validPlans = ['basic', 'premium', 'enterprise'] as const;
     const plan_type = validPlans.includes(data.plan_type) ? data.plan_type : 'basic';
-    
+
     const validated: Quota = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
       user_id: isValidUUID(data.user_id) ? data.user_id : '',
@@ -339,7 +339,7 @@ export function validateQuota(data: any): Quota | null {
       created_at: String(data.created_at),
       updated_at: String(data.updated_at)
     };
-    
+
     return validated;
   } catch (error) {
     console.error('Error validating quota data:', error, data);
@@ -350,19 +350,25 @@ export function validateQuota(data: any): Quota | null {
 /**
  * Generic data validation function that chooses the appropriate validator
  */
-export function validateData<T>(data: any, type: 'contact' | 'group' | 'template' | 'activityLog' | 'assetFile' | 'quota'): T | null {
+export function validateData<T>(data: any, type: 'contact' | 'group' | 'template' | 'activityLog' | 'assetFile' | 'quota' | string): T | null {
   switch (type) {
     case 'contact':
+    case 'contacts':
       return validateContact(data) as T;
     case 'group':
+    case 'groups':
       return validateGroup(data) as T;
     case 'template':
+    case 'templates':
       return validateTemplate(data) as T;
     case 'activityLog':
+    case 'activity_logs':
       return validateActivityLog(data) as T;
     case 'assetFile':
+    case 'assets':
       return validateAssetFile(data) as T;
     case 'quota':
+    case 'quotas':
       return validateQuota(data) as T;
     default:
       console.error('Unknown data type for validation:', type);
@@ -398,7 +404,7 @@ export function safeTransform<T>(
       logValidationError(operation, dataType, data, 'Validation returned null');
       return null;
     }
-    
+
     // Then apply the transformation
     const transformed = transformFn(validated);
     return transformed;

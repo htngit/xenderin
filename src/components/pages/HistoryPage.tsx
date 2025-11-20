@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useServices } from '@/lib/services/ServiceContext';
+import { handleServiceError } from '@/lib/utils/errorHandling';
+import { ActivityLog } from '@/lib/services/types';
+import { LoadingScreen } from '@/components/ui/LoadingScreen';
+import { ErrorScreen } from '@/components/ui/ErrorScreen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +13,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AnimatedCard } from '@/components/ui/animated-card';
 import { FadeIn, Stagger } from '@/components/ui/animations';
-import { HistoryService, ActivityLog } from '@/lib/services';
 import {
   Clock,
   Search,
@@ -24,135 +28,33 @@ import {
   TrendingUp
 } from 'lucide-react';
 
-export function HistoryPage() {
+// Placeholder content component for when data is loaded
+function HistoryPageContent({
+  logs,
+  filteredLogs,
+  searchQuery,
+  setSearchQuery,
+  statusFilter,
+  setStatusFilter,
+  getStatusIcon,
+  getStatusBadge,
+  formatDate,
+  calculateDuration,
+  stats
+}: {
+  logs: ActivityLog[];
+  filteredLogs: ActivityLog[];
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  statusFilter: string;
+  setStatusFilter: (status: string) => void;
+  getStatusIcon: (status: ActivityLog['status']) => React.ReactNode;
+  getStatusBadge: (status: ActivityLog['status']) => React.ReactNode;
+  formatDate: (dateString: string) => string;
+  calculateDuration: (started: string, completed?: string) => string;
+  stats: any;
+}) {
   const navigate = useNavigate();
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [filteredLogs, setFilteredLogs] = useState<ActivityLog[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [isLoading, setIsLoading] = useState(true);
-
-  const historyService = new HistoryService();
-
-  useEffect(() => {
-    loadLogs();
-  }, []);
-
-  useEffect(() => {
-    filterLogs();
-  }, [logs, searchQuery, statusFilter]);
-
-  const loadLogs = async () => {
-    try {
-      setIsLoading(true);
-      const data = await historyService.getActivityLogs();
-      setLogs(data);
-    } catch (error) {
-      console.error('Failed to load activity logs:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const filterLogs = () => {
-    let filtered = [...logs];
-
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(log => log.status === statusFilter);
-    }
-
-    // Filter by search query
-  if (searchQuery) {
-    filtered = filtered.filter(log =>
-      (log.template_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.contact_group_id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.status.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }
-
-    setFilteredLogs(filtered);
-  };
-
-  const getStatusIcon = (status: ActivityLog['status']) => {
-    switch (status) {
-      case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'failed':
-        return <XCircle className="h-4 w-4 text-red-600" />;
-      case 'running':
-        return <Loader className="h-4 w-4 text-blue-600" />;
-      case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
-      default:
-        return <AlertTriangle className="h-4 w-4 text-gray-600" />;
-    }
-  };
-
-  const getStatusBadge = (status: ActivityLog['status']) => {
-    const variants = {
-      completed: 'default',
-      failed: 'destructive',
-      running: 'secondary',
-      pending: 'outline'
-    } as const;
-
-    return (
-      <Badge variant={variants[status] || 'outline'}>
-        {status}
-      </Badge>
-    );
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const calculateDuration = (started: string, completed?: string) => {
-    if (!completed) return 'N/A';
-
-    const start = new Date(started).getTime();
-    const end = new Date(completed).getTime();
-    const duration = end - start;
-
-    if (duration < 60000) {
-      return `${Math.round(duration / 1000)}s`;
-    } else {
-      return `${Math.round(duration / 60000)}m`;
-    }
-  };
-
-  const getStats = () => {
-    const total = logs.length;
-    const completed = logs.filter(l => l.status === 'completed').length;
-    const failed = logs.filter(l => l.status === 'failed').length;
-    const running = logs.filter(l => l.status === 'running').length;
-    const pending = logs.filter(l => l.status === 'pending').length;
-
-    const totalMessages = logs.reduce((sum, log) => sum + log.total_contacts, 0);
-    const successMessages = logs.reduce((sum, log) => sum + log.success_count, 0);
-    const failedMessages = logs.reduce((sum, log) => sum + log.failed_count, 0);
-
-    return {
-      total,
-      completed,
-      failed,
-      running,
-      pending,
-      totalMessages,
-      successMessages,
-      failedMessages,
-      successRate: totalMessages > 0 ? ((successMessages / totalMessages) * 100).toFixed(1) : '0'
-    };
-  };
-
-  const stats = getStats();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -266,9 +168,7 @@ export function HistoryPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {isLoading ? (
-                <div className="text-center py-8">Loading activity logs...</div>
-              ) : filteredLogs.length === 0 ? (
+              {filteredLogs.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {searchQuery || statusFilter !== 'all'
                     ? 'No activity logs found matching your filters.'
@@ -362,5 +262,165 @@ export function HistoryPage() {
         </FadeIn>
       </div>
     </div>
+  );
+}
+
+export function HistoryPage() {
+  const { historyService, isInitialized } = useServices();
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [filteredLogs, setFilteredLogs] = useState<ActivityLog[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const data = await historyService.getActivityLogs();
+      setLogs(data);
+    } catch (err) {
+      console.error('Failed to load activity logs:', err);
+      const appError = handleServiceError(err, 'loadHistory');
+      setError(appError.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isInitialized) {
+      loadData();
+    }
+  }, [isInitialized, historyService]);
+
+  useEffect(() => {
+    filterLogs();
+  }, [logs, searchQuery, statusFilter]);
+
+  const filterLogs = () => {
+    let filtered = [...logs];
+
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(log => log.status === statusFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      filtered = filtered.filter(log =>
+        (log.template_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (log.contact_group_id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        log.status.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    setFilteredLogs(filtered);
+  };
+
+  const getStatusIcon = (status: ActivityLog['status']) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'failed':
+        return <XCircle className="h-4 w-4 text-red-600" />;
+      case 'running':
+        return <Loader className="h-4 w-4 text-blue-600" />;
+      case 'pending':
+        return <Clock className="h-4 w-4 text-yellow-600" />;
+      default:
+        return <AlertTriangle className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getStatusBadge = (status: ActivityLog['status']) => {
+    const variants = {
+      completed: 'default',
+      failed: 'destructive',
+      running: 'secondary',
+      pending: 'outline'
+    } as const;
+
+    return (
+      <Badge variant={variants[status] || 'outline'}>
+        {status}
+      </Badge>
+    );
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const calculateDuration = (started: string, completed?: string) => {
+    if (!completed) return 'N/A';
+
+    const start = new Date(started).getTime();
+    const end = new Date(completed).getTime();
+    const duration = end - start;
+
+    if (duration < 60000) {
+      return `${Math.round(duration / 1000)}s`;
+    } else {
+      return `${Math.round(duration / 60000)}m`;
+    }
+  };
+
+  const getStats = () => {
+    const total = logs.length;
+    const completed = logs.filter(l => l.status === 'completed').length;
+    const failed = logs.filter(l => l.status === 'failed').length;
+    const running = logs.filter(l => l.status === 'running').length;
+    const pending = logs.filter(l => l.status === 'pending').length;
+
+    const totalMessages = logs.reduce((sum, log) => sum + log.total_contacts, 0);
+    const successMessages = logs.reduce((sum, log) => sum + log.success_count, 0);
+    const failedMessages = logs.reduce((sum, log) => sum + log.failed_count, 0);
+
+    return {
+      total,
+      completed,
+      failed,
+      running,
+      pending,
+      totalMessages,
+      successMessages,
+      failedMessages,
+      successRate: totalMessages > 0 ? ((successMessages / totalMessages) * 100).toFixed(1) : '0'
+    };
+  };
+
+  const stats = getStats();
+
+  if (isLoading) {
+    return <LoadingScreen message="Loading history..." />;
+  }
+
+  if (error) {
+    return <ErrorScreen error={error} onRetry={loadData} />;
+  }
+
+  return (
+    <HistoryPageContent
+      logs={logs}
+      filteredLogs={filteredLogs}
+      searchQuery={searchQuery}
+      setSearchQuery={setSearchQuery}
+      statusFilter={statusFilter}
+      setStatusFilter={setStatusFilter}
+      getStatusIcon={getStatusIcon}
+      getStatusBadge={getStatusBadge}
+      formatDate={formatDate}
+      calculateDuration={calculateDuration}
+      stats={stats}
+    />
   );
 }

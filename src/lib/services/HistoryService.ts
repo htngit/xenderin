@@ -3,14 +3,14 @@ import { supabase, handleDatabaseError } from '../supabase';
 import { db, LocalActivityLog } from '../db';
 import { SyncManager } from '../sync/SyncManager';
 import { userContextManager } from '../security/UserContextManager';
-import { 
-  toISOString, 
-  fromISOString, 
-  supabaseToLocal, 
-  localToSupabase, 
-  addSyncMetadata, 
+import {
+  toISOString,
+  fromISOString,
+  supabaseToLocal,
+  localToSupabase,
+  addSyncMetadata,
   addTimestamps,
-  standardizeForService 
+  standardizeForService
 } from '../utils/timestamp';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -51,10 +51,10 @@ export class HistoryService {
   async initialize(masterUserId: string) {
     this.masterUserId = masterUserId;
     this.syncManager.setMasterUserId(masterUserId);
-    
+
     // Start auto sync
     this.syncManager.startAutoSync();
-    
+
     // Initial sync with error handling
     try {
       await this.syncManager.triggerSync();
@@ -70,13 +70,13 @@ export class HistoryService {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-      
+
       const response = await fetch('/api/ping', {
         method: 'HEAD',
         cache: 'no-cache',
         signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
@@ -119,7 +119,7 @@ export class HistoryService {
     }
 
     const user = await this.getCurrentUser();
-    
+
     // Get user's profile to find master_user_id
     const { data: profile, error } = await supabase
       .from('profiles')
@@ -195,12 +195,12 @@ export class HistoryService {
       // If we have local data, return it immediately (offline-first approach)
       if (localLogs.length > 0) {
         const transformedLogs = this.transformLocalLogs(localLogs);
-        
+
         // If online, trigger background sync to update local data
         if (isOnline) {
           this.backgroundSyncHistory().catch(console.warn);
         }
-        
+
         return transformedLogs;
       }
 
@@ -209,7 +209,7 @@ export class HistoryService {
         try {
           // Try to sync from server
           await this.syncManager.triggerSync();
-          
+
           // Try local again after sync
           localLogs = await db.activityLogs
             .where('master_user_id')
@@ -223,7 +223,7 @@ export class HistoryService {
         } catch (syncError) {
           console.warn('Sync failed, trying direct server fetch:', syncError);
         }
-        
+
         // Fallback to direct server fetch
         return await this.fetchLogsFromServer();
       } else {
@@ -233,7 +233,7 @@ export class HistoryService {
       }
     } catch (error) {
       console.error('Error fetching activity logs:', error);
-      
+
       // Enhanced error handling with offline fallback
       const isOnline = await this.checkOnlineStatus();
       if (!isOnline) {
@@ -245,17 +245,17 @@ export class HistoryService {
             .equals(masterUserId)
             .and(log => !log._deleted)
             .toArray();
-          
+
           if (localLogs.length > 0) {
             return this.transformLocalLogs(localLogs);
           }
         } catch (offlineError) {
           console.error('Even offline fallback failed:', offlineError);
         }
-        
+
         return [];
       }
-      
+
       // Online mode fallback to server
       try {
         return await this.fetchLogsFromServer();
@@ -448,9 +448,9 @@ export class HistoryService {
    * Update log status and completion details - local first with sync
    */
   async updateLogStatus(
-    id: string, 
-    status: ActivityLog['status'], 
-    completedAt?: string, 
+    id: string,
+    status: ActivityLog['status'],
+    completedAt?: string,
     errorMessage?: string
   ): Promise<void> {
     try {
@@ -458,7 +458,7 @@ export class HistoryService {
 
       // Check if log exists locally
       const existingLog = await db.activityLogs.get(id);
-      
+
       if (!existingLog || existingLog._deleted) {
         // Log doesn't exist locally, try server
         const serverLog = await this.getLogById(id);
@@ -513,7 +513,7 @@ export class HistoryService {
 
       // Try local first
       const localLog = await db.activityLogs.get(id);
-      
+
       if (localLog && !localLog._deleted && localLog.master_user_id === masterUserId) {
         const transformed = this.transformLocalLogs([localLog]);
         return transformed[0] || null;
@@ -605,7 +605,7 @@ export class HistoryService {
     callback: (activityLog: ActivityLog, eventType: 'INSERT' | 'UPDATE' | 'DELETE') => void
   ) {
     this.unsubscribeFromActivityUpdates();
-    
+
     this.realtimeChannel = supabase
       .channel('history')
       .on(
@@ -617,7 +617,7 @@ export class HistoryService {
         },
         (payload) => {
           const { new: newRecord, old: oldRecord, eventType } = payload;
-          
+
           // Transform the record to match ActivityLog interface with standardized timestamps
           const transformLog = (record: any): ActivityLog => {
             const standardized = standardizeForService(record, 'history');
@@ -683,7 +683,7 @@ export class HistoryService {
         const failedLogs = localLogs.filter(l => l.status === 'failed').length;
         const runningLogs = localLogs.filter(l => l.status === 'running').length;
         const pendingLogs = localLogs.filter(l => l.status === 'pending').length;
-        
+
         const totalMessages = localLogs.reduce((sum, log) => sum + (log.total_contacts || 0), 0);
         const successfulMessages = localLogs.reduce((sum, log) => sum + (log.success_count || 0), 0);
         const failedMessages = localLogs.reduce((sum, log) => sum + (log.failed_count || 0), 0);
@@ -714,7 +714,7 @@ export class HistoryService {
       const failedLogs = logs.filter(l => l.status === 'failed').length;
       const runningLogs = logs.filter(l => l.status === 'running').length;
       const pendingLogs = logs.filter(l => l.status === 'pending').length;
-      
+
       const totalMessages = logs.reduce((sum, log) => sum + (log.total_contacts || 0), 0);
       const successfulMessages = logs.reduce((sum, log) => sum + (log.success_count || 0), 0);
       const failedMessages = logs.reduce((sum, log) => sum + (log.failed_count || 0), 0);
@@ -732,6 +732,82 @@ export class HistoryService {
     } catch (error) {
       console.error('Error fetching activity stats:', error);
       throw new Error(handleDatabaseError(error));
+    }
+  }
+
+  /**
+   * Get recent activity logs (limited count)
+   * Optimized for Dashboard display
+   */
+  async getRecentActivity(limit: number = 5): Promise<ActivityLog[]> {
+    try {
+      const masterUserId = await this.getMasterUserId();
+
+      // Try local first - efficient query
+      const localLogs = await db.activityLogs
+        .where('master_user_id')
+        .equals(masterUserId)
+        .and(log => !log._deleted)
+        .reverse() // Newest first
+        .limit(limit)
+        .toArray();
+
+      if (localLogs.length > 0) {
+        return this.transformLocalLogs(localLogs);
+      }
+
+      // Fallback to server if local is empty (e.g. fresh install before sync completes)
+      // Check online status first
+      const isOnline = await this.checkOnlineStatus();
+      if (!isOnline) return [];
+
+      const { data, error } = await supabase
+        .from('history')
+        .select(`
+          *,
+          groups (
+            id,
+            name,
+            color
+          ),
+          templates (
+            id,
+            name
+          )
+        `)
+        .eq('master_user_id', masterUserId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+
+      return (data || []).map(log => {
+        const standardized = standardizeForService(log, 'history');
+        return {
+          id: standardized.id,
+          user_id: standardized.user_id,
+          master_user_id: standardized.master_user_id,
+          contact_group_id: standardized.contact_group_id || undefined,
+          template_id: standardized.template_id || undefined,
+          template_name: standardized.template_name || undefined,
+          total_contacts: standardized.total_contacts,
+          success_count: standardized.success_count,
+          failed_count: standardized.failed_count,
+          status: standardized.status,
+          delay_range: standardized.delay_range,
+          scheduled_for: standardized.scheduled_for || undefined,
+          started_at: standardized.started_at || undefined,
+          completed_at: standardized.completed_at || undefined,
+          error_message: standardized.error_message || undefined,
+          metadata: standardized.metadata || undefined,
+          created_at: standardized.created_at,
+          updated_at: standardized.updated_at
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching recent activity:', error);
+      // Return empty array instead of throwing to prevent Dashboard crash
+      return [];
     }
   }
 
