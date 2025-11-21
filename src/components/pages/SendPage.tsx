@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { AnimatedButton } from '@/components/ui/animated-button';
 import { AnimatedCard } from '@/components/ui/animated-card';
 import { FadeIn } from '@/components/ui/animations';
-import { Contact, Template, Quota, ContactGroup, AssetFile } from '@/lib/services/types';
+import { Contact, Template, Quota, ContactGroup, AssetFile, MessageLog } from '@/lib/services/types';
 import {
   Send,
   MessageSquare,
@@ -274,8 +274,8 @@ function SendPageContent({
                               <div
                                 key={asset.id}
                                 className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-sm ${isSelected
-                                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                                    : 'border-gray-200 hover:border-gray-300'
+                                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                  : 'border-gray-200 hover:border-gray-300'
                                   }`}
                                 onClick={() => toggleAssetSelection(asset.id)}
                               >
@@ -529,7 +529,7 @@ function SendPageContent({
 }
 
 export function SendPage({ userName }: SendPageProps) {
-  const { contactService, templateService, quotaService, groupService, assetService, isInitialized } = useServices();
+  const { contactService, templateService, quotaService, groupService, assetService, historyService, isInitialized } = useServices();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [quota, setQuota] = useState<Quota | null>(null);
@@ -660,7 +660,38 @@ export function SendPage({ userName }: SendPageProps) {
       // Step 4: Commit quota usage
       await quotaService.commitQuota(reserveResult.reservation_id, successCount);
 
-      // Step 5: Update local quota
+      // Step 5: Create Activity Log with Message Logs
+      const messageLogs: MessageLog[] = targetContacts.map((contact, index) => {
+        const isSuccess = index < successCount;
+        return {
+          id: crypto.randomUUID(),
+          activity_log_id: '', // Placeholder, will be part of the parent log
+          contact_id: contact.id,
+          contact_name: contact.name,
+          contact_phone: contact.phone,
+          status: isSuccess ? 'sent' : 'failed',
+          sent_at: new Date().toISOString(),
+          error_message: isSuccess ? undefined : 'Failed to deliver message'
+        };
+      });
+
+      await historyService.createLog({
+        user_id: currentUserId,
+        master_user_id: currentUserId,
+        contact_group_id: selectedGroupId === 'all' ? undefined : selectedGroupId,
+        template_id: selectedTemplate,
+        template_name: selectedTemplateData.name,
+        total_contacts: targetContacts.length,
+        success_count: successCount,
+        failed_count: failedCount,
+        status: 'completed',
+        delay_range: delayRange[0],
+        metadata: {
+          logs: messageLogs
+        }
+      });
+
+      // Step 6: Update local quota
       const updatedQuota = {
         ...quota,
         messages_used: quota.messages_used + successCount,

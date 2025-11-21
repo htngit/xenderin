@@ -39,6 +39,8 @@ export function UserProvider({ children }: UserProviderProps) {
 
   // Ref to track current user ID to avoid stale closures in useEffect
   const currentUserIdRef = React.useRef<string | null>(null);
+  // Ref to track if sign-in is currently in progress to prevent race conditions
+  const isSigningInRef = React.useRef<string | null>(null);
 
   // Update ref when user state changes
   useEffect(() => {
@@ -99,8 +101,15 @@ export function UserProvider({ children }: UserProviderProps) {
       return;
     }
 
+    // Prevent race conditions - if we are already signing in this user, skip
+    if (isSigningInRef.current === authUser.id) {
+      console.log('Sign-in already in progress for:', authUser.id);
+      return;
+    }
+
     try {
       console.log('handleSignIn started');
+      isSigningInRef.current = authUser.id;
       setIsLoading(true);
 
       const userProfile = await fetchUserProfile(authUser);
@@ -112,9 +121,20 @@ export function UserProvider({ children }: UserProviderProps) {
 
         // Update UserContextManager
         try {
-          await userContextManager.setCurrentUser(userProfile, sessionToken);
+          // We just fetched the profile, so we can skip DB verification in UserContextManager
+          // to avoid redundant network calls and potential timeouts
+          const contextSet = await userContextManager.setCurrentUser(userProfile, sessionToken, { skipDbVerification: true });
+
+          if (!contextSet) {
+            console.error('UserContextManager failed to set user context (validation failed)');
+            // Clear state to prevent inconsistent app state
+            setUser(null);
+            setMasterUserId(null);
+          }
         } catch (ctxError) {
           console.error('Failed to set user context:', ctxError);
+          setUser(null);
+          setMasterUserId(null);
         }
       } else {
         // Handle case where profile doesn't exist yet (e.g. new signup)
@@ -133,15 +153,24 @@ export function UserProvider({ children }: UserProviderProps) {
 
         // Update UserContextManager with temporary user
         try {
-          await userContextManager.setCurrentUser(newUser, sessionToken);
+          const contextSet = await userContextManager.setCurrentUser(newUser, sessionToken, { skipDbVerification: true });
+
+          if (!contextSet) {
+            console.error('UserContextManager failed to set temporary user context');
+            setUser(null);
+            setMasterUserId(null);
+          }
         } catch (ctxError) {
           console.error('Failed to set temporary user context:', ctxError);
+          setUser(null);
+          setMasterUserId(null);
         }
       }
     } catch (error) {
       console.error('Error in handleSignIn:', error);
     } finally {
       console.log('handleSignIn finally block - setting loading false');
+      isSigningInRef.current = null;
       setIsLoading(false);
     }
   };

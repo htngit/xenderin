@@ -154,6 +154,17 @@ export interface ActivityLog {
   updated_at: string;
 }
 
+export interface MessageLog {
+  id: string;
+  activity_log_id: string;
+  contact_id: string;
+  contact_name: string;
+  contact_phone: string;
+  status: 'sent' | 'failed' | 'pending';
+  sent_at?: string;
+  error_message?: string;
+}
+
 export interface SendConfig {
   contact_group_id: string;
   template_id: string;

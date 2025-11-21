@@ -1,4 +1,4 @@
-import { ActivityLog } from './types';
+import { ActivityLog, MessageLog } from './types';
 import { supabase, handleDatabaseError } from '../supabase';
 import { db, LocalActivityLog } from '../db';
 import { SyncManager } from '../sync/SyncManager';
@@ -807,6 +807,35 @@ export class HistoryService {
     } catch (error) {
       console.error('Error fetching recent activity:', error);
       // Return empty array instead of throwing to prevent Dashboard crash
+      return [];
+    }
+  }
+
+  /**
+   * Get all individual message logs from all campaigns
+   * Flattens the metadata.logs from each activity log
+   */
+  async getAllMessageLogs(): Promise<MessageLog[]> {
+    try {
+      const activityLogs = await this.getActivityLogs();
+      const messageLogs: MessageLog[] = [];
+
+      for (const log of activityLogs) {
+        if (log.metadata && Array.isArray(log.metadata.logs)) {
+          const logs = log.metadata.logs as MessageLog[];
+          messageLogs.push(...logs);
+        }
+      }
+
+      // Sort by sent_at descending
+      return messageLogs.sort((a, b) => {
+        const dateA = a.sent_at ? new Date(a.sent_at).getTime() : 0;
+        const dateB = b.sent_at ? new Date(b.sent_at).getTime() : 0;
+        return dateB - dateA;
+      });
+    } catch (error) {
+      console.error('Error fetching message logs:', error);
+      // Return empty array on error to prevent UI crash
       return [];
     }
   }

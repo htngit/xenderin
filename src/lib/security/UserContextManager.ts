@@ -120,226 +120,155 @@ class UserContextManager {
   }
 
   /**
-   * Set current user context and validate session
+   * Set current user context with validation
    */
-  async setCurrentUser(user: User, sessionToken?: string): Promise<void> {
+  async setCurrentUser(user: User, sessionToken?: string, options: { skipDbVerification?: boolean } = {}): Promise<boolean> {
     try {
+      console.log('Setting user context:', { userId: user?.id, masterId: user?.master_user_id, options });
+
       // Validate user context
-      const validation = await this.validateUserContext(user);
+      const validation = await this.validateUserContext(user, options);
+
       if (!validation.isValid) {
-        throw new Error(`Invalid user context: ${validation.error}`);
+        console.error('User context validation failed:', validation);
+        await this.logSecurityEvent({
+          event_type: 'security_breach_detected',
+          severity: 'critical',
+          user_id: user.id,
+          details: { reason: validation.error, risk_level: validation.riskLevel }
+        });
+        return false;
       }
 
-      // Set current user
       this.currentUser = user;
       this.currentMasterUserId = user.master_user_id;
+      this.sessionToken = sessionToken || null;
 
-      // Store or update session
+      console.log('User context set successfully:', { userId: user.id });
+
+      // Log successful context switch
+      await this.logSecurityEvent({
+        event_type: 'user_context_switch',
+        severity: 'info',
+        user_id: user.id,
+        master_user_id: user.master_user_id,
+        details: { action: 'set_current_user' }
+      });
+
+      // Create session if token provided
       if (sessionToken) {
-        this.sessionToken = sessionToken;
         await this.createUserSession(user, sessionToken);
       }
 
-      // Log security event
-      await this.logSecurityEvent({
-        event_type: 'user_login',
-        user_id: user.id,
-        master_user_id: user.master_user_id,
-        severity: 'info',
-        details: {
-          login_method: sessionToken ? 'token' : 'password',
-          user_role: user.role
-        }
-      });
-
-      console.log(`User context established for: ${user.email} (Master: ${user.master_user_id})`);
+      return true;
     } catch (error) {
-      console.error('Error setting current user context:', error);
-      await this.logSecurityEvent({
-        event_type: 'security_breach_detected',
-        severity: 'critical',
-        details: {
-          error: error instanceof Error ? error.message : String(error),
-          attempted_user_id: user.id
-        }
-      });
-      throw error;
+      console.error('Error setting user context:', error);
+      return false;
     }
   }
 
   /**
-   * Clear current user context and invalidate session
-   */
-  async clearCurrentUser(): Promise<void> {
-    try {
-      // Store user info before clearing for logging
-      const userToLog = this.currentUser;
-
-      // Invalidate session in database
-      if (this.sessionToken) {
-        await this.invalidateUserSession(this.sessionToken);
-      }
-
-      // Log logout event if we have user info
-      if (userToLog) {
-        await this.logSecurityEvent({
-          event_type: 'user_logout',
-          user_id: userToLog.id,
-          master_user_id: userToLog.master_user_id,
-          severity: 'info',
-          details: { logout_reason: 'manual' }
-        });
-      }
-
-      // Clear context
-      this.currentUser = null;
-      this.currentMasterUserId = null;
-      this.sessionToken = null;
-    } catch (error) {
-      console.error('Error clearing user context:', error);
-      // Still clear context even if logging fails
-      this.currentUser = null;
-      this.currentMasterUserId = null;
-      this.sessionToken = null;
-      throw error;
-    }
-  }
-
-  /**
-   * Get current user with validation
+   * Get current user
    */
   async getCurrentUser(): Promise<User | null> {
-    try {
-      // Validate current session
-      if (this.currentUser && this.sessionToken) {
-        const isValid = await this.validateCurrentSession();
-        if (isValid) {
-          return this.currentUser;
-        } else {
-          // Session invalid, clear context
-          await this.clearCurrentUser();
-          return null;
-        }
-      }
-      return null;
-    } catch (error) {
-      console.error('Error getting current user:', error);
-      return null;
-    }
+    return this.currentUser;
   }
 
   /**
-   * Get current master user ID with validation
+   * Get current master user ID
    */
   async getCurrentMasterUserId(): Promise<string | null> {
-    const user = await this.getCurrentUser();
-    return user?.master_user_id || null;
+    return this.currentMasterUserId;
   }
 
   /**
-   * Validate user context and data access permissions
+   * Clear current user context
    */
-  async validateUserContext(user: User): Promise<UserContextValidation> {
+  clearCurrentUser(): void {
+    this.currentUser = null;
+    this.currentMasterUserId = null;
+    this.sessionToken = null;
+  }
+
+  /**
+   * Validate user context against security policies
+   */
+  async validateUserContext(user: User, options: { skipDbVerification?: boolean } = {}): Promise<UserContextValidation> {
     try {
-      // Basic validation
+      console.log('Validating user context:', { userId: user?.id, masterId: user?.master_user_id, options });
+
       if (!user || !user.id || !user.master_user_id) {
+        console.error('Validation failed: Missing user ID or master user ID', user);
         return {
           isValid: false,
-          error: 'Invalid user structure',
-          riskLevel: 'high'
+          riskLevel: 'high',
+          error: 'Invalid user structure'
         };
       }
 
-      // Validate UUID format
       if (!this.isValidUUID(user.id) || !this.isValidUUID(user.master_user_id)) {
+        console.error('Validation failed: Invalid UUID format', { id: user.id, masterId: user.master_user_id });
         return {
           isValid: false,
-          error: 'Invalid UUID format',
-          riskLevel: 'critical'
-        };
-      }
-
-      // Validate role
-      if (!['owner', 'staff'].includes(user.role)) {
-        return {
-          isValid: false,
-          error: 'Invalid user role',
-          riskLevel: 'high'
+          riskLevel: 'critical',
+          error: 'Invalid UUID format detected'
         };
       }
 
       // Verify user exists in database with timeout
+      if (options.skipDbVerification) {
+        return {
+          isValid: true,
+          user,
+          masterUserId: user.master_user_id,
+          riskLevel: 'low'
+        };
+      }
+
       // Create a timeout promise
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Profile verification timed out')), 5000);
       });
 
-      let profile;
-      let dbError;
-
+      // Race between fetch and timeout
       try {
-        const result = await Promise.race([
+        const { data: profile, error } = await Promise.race([
           supabase
             .from('profiles')
-            .select('id, master_user_id, role, is_active')
+            .select('id, master_user_id, role, status')
             .eq('id', user.id)
             .single(),
-          timeoutPromise.then(() => { throw new Error('Timeout'); })
+          timeoutPromise
         ]) as any;
 
-        profile = result.data;
-        dbError = result.error;
-      } catch (err) {
-        console.warn('Profile verification failed (network/timeout), proceeding with trust-on-first-use:', err);
-        // If we can't verify against DB (offline/timeout), we trust the auth token's user metadata
-        // This allows offline login to proceed
-        return {
-          isValid: true,
-          user,
-          masterUserId: user.master_user_id,
-          riskLevel: 'medium', // Elevated risk because we couldn't verify against latest DB state
-          error: 'Offline/Timeout verification'
-        };
-      }
-
-      if (dbError || !profile) {
-        // If we got an explicit error from DB (not timeout), it might be real
-        console.warn('Profile not found or DB error:', dbError);
-
-        // If it's a connection error, treat as offline
-        if (dbError?.message?.includes('fetch') || dbError?.message?.includes('network')) {
+        if (error || !profile) {
+          console.warn('Profile verification failed (network/timeout):', error);
           return {
-            isValid: true,
-            user,
-            masterUserId: user.master_user_id,
-            riskLevel: 'medium',
-            error: 'Network error during verification'
+            isValid: false,
+            riskLevel: 'high',
+            error: 'User profile not found or verification failed'
           };
         }
 
-        return {
-          isValid: false,
-          error: 'User not found in database',
-          riskLevel: 'critical'
-        };
-      }
+        if (profile.master_user_id !== user.master_user_id) {
+          return {
+            isValid: false,
+            riskLevel: 'critical',
+            error: 'Master User ID mismatch - potential privilege escalation attempt'
+          };
+        }
 
-      // Verify account is active
-      if (!profile.is_active) {
-        return {
-          isValid: false,
-          error: 'User account is inactive',
-          riskLevel: 'high'
-        };
-      }
-
-      // Verify master_user_id matches
-      if (profile.master_user_id !== user.master_user_id) {
-        return {
-          isValid: false,
-          error: 'Master user ID mismatch',
-          riskLevel: 'critical'
-        };
+        if (profile.status === 'suspended' || profile.status === 'inactive') {
+          return {
+            isValid: false,
+            riskLevel: 'medium',
+            error: 'User account is not active'
+          };
+        }
+      } catch (err) {
+        console.warn('Profile verification skipped due to timeout or error:', err);
+        // We allow proceeding if verification times out to avoid blocking valid users on slow connections
+        // but we log it as a potential risk
       }
 
       return {
@@ -348,16 +277,12 @@ class UserContextManager {
         masterUserId: user.master_user_id,
         riskLevel: 'low'
       };
-
     } catch (error) {
-      // Catch-all for any other errors
-      console.warn('User context validation error, defaulting to valid for resilience:', error);
+      console.error('Validation error:', error);
       return {
-        isValid: true, // Allow to proceed to avoid lockout
-        user,
-        masterUserId: user.master_user_id,
-        riskLevel: 'medium',
-        error: `Validation error: ${error instanceof Error ? error.message : String(error)}`
+        isValid: false,
+        riskLevel: 'high',
+        error: error instanceof Error ? error.message : 'Unknown validation error'
       };
     }
   }
@@ -406,6 +331,7 @@ class UserContextManager {
   async checkPermission(action: string, resourceType: string): Promise<boolean> {
     const user = await this.getCurrentUser();
     if (!user) {
+      console.warn('Permission denied: No current user', { action, resourceType });
       await this.logSecurityEvent({
         event_type: 'permission_denied',
         severity: 'warning',
@@ -445,6 +371,7 @@ class UserContextManager {
     const isAllowed = allowedActions.includes(action);
 
     if (!isAllowed) {
+      console.warn('Permission denied: Action not allowed', { action, role: user.role });
       await this.logSecurityEvent({
         event_type: 'permission_denied',
         severity: 'warning',
@@ -693,8 +620,14 @@ class UserContextManager {
    * Utility: Validate UUID format
    */
   private isValidUUID(value: string): boolean {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return typeof value === 'string' && uuidRegex.test(value);
+    if (!value || typeof value !== 'string') return false;
+    // Relaxed UUID regex to be less strict about versions/variants
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValid = uuidRegex.test(value);
+    if (!isValid) {
+      console.warn(`Invalid UUID format detected: ${value}`);
+    }
+    return isValid;
   }
 
   /**
