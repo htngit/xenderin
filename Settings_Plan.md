@@ -66,7 +66,7 @@ Build comprehensive Settings Page with 8 tabs:
 ✅ **Monthly → Yearly Switch**: Immediate charge, previous payment hangus  
 ✅ **Grace Period**: 3 days for failed payments  
 ✅ **Refund**: 14 days for service complaints, transfer to bank  
-✅ **Rate Limit**: Warning only for >300 msg/hour (Pro plan)  
+✅ **Rate Limit**: Warning only for >300 msg/hour  
 ✅ **New User**: Auto Free plan with 5 messages  
 
 ### Company Info (for Invoices)
@@ -83,19 +83,136 @@ Tax: 0% (placeholder for future)
 
 ---
 
-## Phase 1: Database Schema
+## Phase 1: Database Schema (SAFE - No Breaking Changes)
 
 **Duration**: 1 day  
 **File**: `supabase/migrations/20251121_settings_schema.sql`
+
+> **⚠️ CRITICAL: ZERO BREAKING CHANGES**  
+> - ❌ NO ALTER to existing tables (`user_quotas`, `quota_reservations`, `profiles`)
+> - ✅ Only CREATE new tables
+> - ✅ Sync via triggers (automatic, backward compatible)
+> - ✅ Existing code continues to work without changes
+
+### Existing Tables (DO NOT MODIFY)
+
+**Already in database - KEEP AS IS:**
+- ✅ `user_quotas` - Quota tracking (plan_type, messages_limit, messages_used, reset_date)
+- ✅ `quota_reservations` - Reserve/commit flow
+- ✅ `profiles` - User profiles (name, email, avatar, role)
+
+### Integration Strategy
+
+```
+New: subscriptions (billing layer)
+        ↓ (auto-sync via trigger)
+Existing: user_quotas (quota layer) ← NO CHANGES, existing code reads from here
+        ↓ (existing relationship)
+Existing: quota_reservations ← NO CHANGES
+```
 
 ### Tasks Checklist
 
 #### 1.1 Create Migration File
 - [ ] Create `supabase/migrations/` directory if not exists
 - [ ] Create `20251121_settings_schema.sql`
-- [ ] Add migration header comment
+- [ ] Add migration header with SAFE strategy note
 
-#### 1.2 User Settings Table
+#### 1.2 Subscriptions Table (NEW - Billing Layer)
+```sql
+-- NEW TABLE: Billing & subscription management
+CREATE TABLE subscriptions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  master_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+  
+  -- Plan Info
+  plan_type TEXT NOT NULL DEFAULT 'free' CHECK (plan_type IN ('free', 'basic', 'pro')),
+  billing_cycle TEXT DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly')),
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled', 'pending')),
+  
+  -- Pricing
+  price DECIMAL(10,2) DEFAULT 0,
+  currency TEXT DEFAULT 'IDR',
+  
+  -- Dates
+  valid_from TIMESTAMPTZ DEFAULT NOW(),
+  valid_until TIMESTAMPTZ,
+  next_billing_date TIMESTAMPTZ,
+  quota_reset_date TIMESTAMPTZ DEFAULT DATE_TRUNC('month', NOW() + INTERVAL '1 month'),
+  
+  -- Auto-renewal
+  auto_renew BOOLEAN DEFAULT false,
+  
+  -- Scheduled Changes
+  scheduled_downgrade_to TEXT,
+  scheduled_downgrade_date TIMESTAMPTZ,
+  
+  -- Grace Period
+  grace_period_ends_at TIMESTAMPTZ,
+  
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view own subscription" ON subscriptions FOR SELECT USING (auth.uid() = master_user_id);
+CREATE POLICY "Users can update own subscription" ON subscriptions FOR UPDATE USING (auth.uid() = master_user_id);
+
+-- Index
+CREATE INDEX idx_subscriptions_user ON subscriptions(master_user_id);
+CREATE INDEX idx_subscriptions_status ON subscriptions(status, next_billing_date);
+```
+
+#### 1.3 Sync Trigger (Auto-update user_quotas)
+```sql
+-- CRITICAL: Auto-sync subscriptions → user_quotas
+-- This keeps existing code working without changes
+CREATE OR REPLACE FUNCTION sync_subscription_to_quota()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Update user_quotas when subscription changes
+  UPDATE user_quotas
+  SET 
+    plan_type = NEW.plan_type,
+    messages_limit = CASE 
+      WHEN NEW.plan_type = 'free' THEN 5
+      WHEN NEW.plan_type = 'basic' THEN 500
+      WHEN NEW.plan_type = 'pro' THEN 999999 -- "unlimited"
+    END,
+    reset_date = DATE_TRUNC('month', NOW() + INTERVAL '1 month')::date,
+    updated_at = NOW()
+  WHERE master_user_id = NEW.master_user_id;
+  
+  -- If user_quotas doesn't exist, create it
+  IF NOT FOUND THEN
+    INSERT INTO user_quotas (user_id, master_user_id, plan_type, messages_limit, messages_used, reset_date)
+    VALUES (
+      NEW.master_user_id,
+      NEW.master_user_id,
+      NEW.plan_type,
+      CASE 
+        WHEN NEW.plan_type = 'free' THEN 5
+        WHEN NEW.plan_type = 'basic' THEN 500
+        WHEN NEW.plan_type = 'pro' THEN 999999
+      END,
+      0,
+      DATE_TRUNC('month', NOW() + INTERVAL '1 month')::date
+    );
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger on INSERT or UPDATE
+CREATE TRIGGER subscription_changed
+  AFTER INSERT OR UPDATE OF plan_type ON subscriptions
+  FOR EACH ROW
+  EXECUTE FUNCTION sync_subscription_to_quota();
+```
+
+#### 1.4 User Settings Table (NEW)
 ```sql
 CREATE TABLE user_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -142,7 +259,7 @@ CREATE POLICY "Users can update own settings" ON user_settings FOR UPDATE USING 
 CREATE POLICY "Users can insert own settings" ON user_settings FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
-#### 1.3 Pricing Plans Table
+#### 1.5 Pricing Plans Table (NEW)
 ```sql
 CREATE TABLE pricing_plans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -158,30 +275,19 @@ CREATE TABLE pricing_plans (
 );
 
 -- Insert pricing data
-INSERT INTO pricing_plans (plan_type, plan_name, billing_cycle, price, quota, features) VALUES
-('free', 'Free Plan', 'monthly', 0, 5, '["5 messages per month", "Basic support"]'),
-('basic', 'Basic - Monthly', 'monthly', 50000, 500, '["500 messages/month", "Email support", "Templates"]'),
-('basic', 'Basic - Yearly', 'yearly', 480000, 500, '["500 messages/month", "Email support", "Templates", "Save 20%"]'),
-('pro', 'Pro - Monthly', 'monthly', 75000, -1, '["Unlimited messages", "Priority support", "Analytics", "API access"]'),
-('pro', 'Pro - Yearly', 'yearly', 720000, -1, '["Unlimited messages", "Priority support", "Analytics", "API access", "Save 20%"]');
+INSERT INTO pricing_plans (plan_type, plan_name, billing_cycle, price, quota, features, discount_percentage) VALUES
+('free', 'Free Plan', 'monthly', 0, 5, '["5 messages per month", "Basic support"]', 0),
+('basic', 'Basic - Monthly', 'monthly', 50000, 500, '["500 messages/month", "Email support", "Templates"]', 0),
+('basic', 'Basic - Yearly', 'yearly', 480000, 500, '["500 messages/month", "Email support", "Templates", "Save Rp 120K/year"]', 20),
+('pro', 'Pro - Monthly', 'monthly', 75000, -1, '["Unlimited messages", "Max 300/hour recommended", "Priority support", "Analytics", "API access"]', 0),
+('pro', 'Pro - Yearly', 'yearly', 720000, -1, '["Unlimited messages", "Max 300/hour recommended", "Priority support", "Analytics", "API access", "Save Rp 180K/year"]', 20);
 
 -- RLS
 ALTER TABLE pricing_plans ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view active plans" ON pricing_plans FOR SELECT USING (is_active = true);
 ```
 
-#### 1.4 Update Subscriptions Table
-```sql
-ALTER TABLE subscriptions 
-  ADD COLUMN billing_cycle TEXT DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly')),
-  ADD COLUMN next_billing_date TIMESTAMPTZ,
-  ADD COLUMN scheduled_downgrade_to TEXT,
-  ADD COLUMN scheduled_downgrade_date TIMESTAMPTZ,
-  ADD COLUMN grace_period_ends_at TIMESTAMPTZ,
-  ADD COLUMN quota_reset_date TIMESTAMPTZ DEFAULT DATE_TRUNC('month', NOW() + INTERVAL '1 month');
-```
-
-#### 1.5 Payment Transactions Table
+#### 1.6 Payment Transactions Table (NEW)
 ```sql
 CREATE TABLE payment_transactions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -228,9 +334,10 @@ CREATE POLICY "Users can view own transactions" ON payment_transactions FOR SELE
 
 -- Index
 CREATE INDEX idx_payment_transactions_user ON payment_transactions(user_id, created_at DESC);
+CREATE INDEX idx_payment_transactions_status ON payment_transactions(status, created_at DESC);
 ```
 
-#### 1.6 Billing Information Table
+#### 1.7 Billing Information Table (NEW)
 ```sql
 CREATE TABLE billing_information (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -260,7 +367,7 @@ CREATE POLICY "Users can update own billing info" ON billing_information FOR UPD
 CREATE POLICY "Users can insert own billing info" ON billing_information FOR INSERT WITH CHECK (auth.uid() = user_id);
 ```
 
-#### 1.7 Refund Requests Table
+#### 1.8 Refund Requests Table (NEW)
 ```sql
 CREATE TABLE refund_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -292,31 +399,41 @@ CREATE POLICY "Users can insert own refund requests" ON refund_requests FOR INSE
 
 -- Index
 CREATE INDEX idx_refund_requests_user ON refund_requests(user_id, created_at DESC);
+CREATE INDEX idx_refund_requests_status ON refund_requests(status, created_at DESC);
 ```
 
-#### 1.8 Execute Migration
+#### 1.9 Initialize Default Subscriptions
+```sql
+-- Create free subscription for existing users
+INSERT INTO subscriptions (master_user_id, plan_type, status, price, valid_from, valid_until)
+SELECT 
+  id,
+  'free',
+  'active',
+  0,
+  NOW(),
+  NOW() + INTERVAL '100 years' -- Free plan never expires
+FROM auth.users
+WHERE id NOT IN (SELECT master_user_id FROM subscriptions)
+ON CONFLICT (master_user_id) DO NOTHING;
+```
+
+#### 1.10 Execute Migration
 - [ ] Save SQL file
+- [ ] Review migration for safety (no ALTER existing tables)
 - [ ] Use MCP Supabase tool: `apply_migration`
-- [ ] Verify tables in Supabase dashboard
-- [ ] Test RLS policies with sample queries
-- [ ] Verify pricing plans data inserted
+- [ ] Verify new tables created in Supabase dashboard
+- [ ] Test sync trigger (update subscription, check user_quotas auto-updates)
+- [ ] Verify pricing plans data inserted (5 rows)
+- [ ] Verify default subscriptions created for existing users
 
 ### Verification Checklist
-- [ ] All 5 new tables created
-- [ ] `subscriptions` table updated with new columns
-- [ ] RLS enabled on all tables
+- [ ] All 6 new tables created (subscriptions, user_settings, pricing_plans, payment_transactions, billing_information, refund_requests)
+- [ ] Sync trigger working (update subscriptions → user_quotas auto-updates)
+- [ ] RLS enabled on all new tables
 - [ ] Pricing plans data populated (5 rows)
 - [ ] Indexes created
-- [ ] Can query with user JWT (not service role)
-
----
-
-## Phase 2: Edge Functions
-
-**Duration**: 2-3 days  
-**Directory**: `supabase/functions/`
-
-### 2.1 Create Payment Function
+- [ ] Default free subscriptions created for existing users
 
 **File**: `supabase/functions/create-payment/index.ts`
 
@@ -650,6 +767,600 @@ export function useSubscription() {
 
 ---
 
-**Continue to Part 2 for UI Components...**
+## Phase 4: UI Components - Payment & Subscription Tab
 
-See detailed UI component implementation in separate sections below.
+**Duration**: 3-4 days  
+**Directory**: `src/components/settings/`
+
+### 4.1 Settings Page Container
+
+**File**: `src/components/pages/SettingsPage.tsx`
+
+**Structure**:
+```tsx
+export function SettingsPage() {
+  const [activeTab, setActiveTab] = useState('whatsapp-session')
+  
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Sidebar Navigation */}
+          <aside className="lg:col-span-1">
+            <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          </aside>
+          
+          {/* Content Area */}
+          <main className="lg:col-span-3">
+            {activeTab === 'whatsapp-session' && <WhatsAppSessionTab />}
+            {activeTab === 'payment' && <PaymentSubscriptionTab />}
+            {activeTab === 'account' && <AccountProfileTab />}
+            {/* ... other tabs */}
+          </main>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+**Tasks**:
+- [ ] Create SettingsPage.tsx with sidebar + content layout
+- [ ] Implement responsive grid (mobile: stack, desktop: sidebar)
+- [ ] Add tab state management
+- [ ] Style with shadcn Card components
+- [ ] Add page header with title
+
+---
+
+### 4.2 Settings Sidebar Navigation
+
+**File**: `src/components/settings/SettingsSidebar.tsx`
+
+**Features**:
+- Tab list with icons
+- Active tab highlight
+- Locked badge for Team Management
+- Responsive (collapse on mobile)
+
+**Code Structure**:
+```tsx
+const tabs = [
+  { id: 'whatsapp-session', label: 'WhatsApp Session', icon: MessageSquare },
+  { id: 'payment', label: 'Payment & Subscription', icon: CreditCard },
+  { id: 'account', label: 'Account & Profile', icon: User },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'messages', label: 'Message Settings', icon: Settings },
+  { id: 'sync', label: 'Database & Sync', icon: RefreshCw },
+  { id: 'security', label: 'Security & Privacy', icon: Shield },
+  { id: 'team', label: 'Team Management', icon: Users, locked: true },
+  { id: 'advanced', label: 'Advanced', icon: Wrench }
+]
+```
+
+**Tasks**:
+- [ ] Create sidebar component
+- [ ] Map tabs with icons
+- [ ] Add active state styling
+- [ ] Add locked badge (🔒) for Team tab
+- [ ] Make responsive (hamburger on mobile)
+
+---
+
+### 4.3 Current Subscription Card
+
+**File**: `src/components/settings/subscription/CurrentPlanCard.tsx`
+
+**UI Layout**:
+```
+┌─────────────────────────────────────────┐
+│ 💎 Current Plan: PRO                    │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│                                         │
+│ Quota Usage:  7,500 / ∞ messages        │ ← Show ∞ for Pro
+│ [████████████████░░░░] 75%              │
+│                                         │
+│ Billing: Yearly (Save 20%)              │
+│ Valid Until: Dec 21, 2025 (30 days)     │
+│ Auto-Renew: [ON] ✓                      │
+│                                         │
+│ [Upgrade Plan] [Manage Subscription]    │
+└─────────────────────────────────────────┘
+```
+
+**Code Structure**:
+```tsx
+export function CurrentPlanCard() {
+  const { subscription, loading } = useSubscription()
+  
+  const displayQuota = (quota: number) => {
+    if (quota >= 999999 || quota === -1) return '∞'
+    return quota.toLocaleString()
+  }
+  
+  return (
+    <AnimatedCard>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Current Plan</CardTitle>
+          <Badge variant={getBadgeVariant(subscription.plan_type)}>
+            {subscription.plan_type.toUpperCase()}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {/* Quota Progress */}
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>Quota Usage:</span>
+            <span>{subscription.quota_used} / {displayQuota(subscription.quota_limit)}</span>
+          </div>
+          <Progress value={calculatePercentage()} />
+        </div>
+        
+        {/* Billing Info */}
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span>Billing:</span>
+            <span>{subscription.billing_cycle} {subscription.discount && `(Save ${subscription.discount}%)`}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Valid Until:</span>
+            <span>{formatDate(subscription.valid_until)}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Auto-Renew:</span>
+            <Switch checked={subscription.auto_renew} onCheckedChange={handleToggleAutoRenew} />
+          </div>
+        </div>
+        
+        {/* Actions */}
+        <div className="mt-6 flex gap-2">
+          <Button onClick={openUpgradeModal}>Upgrade Plan</Button>
+          <Button variant="outline" onClick={openManageModal}>Manage</Button>
+        </div>
+      </CardContent>
+    </AnimatedCard>
+  )
+}
+```
+
+**Tasks**:
+- [ ] Create component with useSubscription hook
+- [ ] Implement quota display (∞ for Pro)
+- [ ] Add Progress bar (shadcn Progress)
+- [ ] Add auto-renew toggle (shadcn Switch)
+- [ ] Add upgrade/manage buttons
+- [ ] Handle loading state (skeleton)
+- [ ] Add countdown for expiry date
+- [ ] Style plan badge (Free=gray, Basic=blue, Pro=purple)
+
+---
+
+### 4.4 Pricing Plans Comparison
+
+**File**: `src/components/settings/subscription/PricingPlans.tsx`
+
+**UI Layout**:
+```
+┌──────────────────────────────────────────────────────┐
+│ Choose Your Plan                                     │
+│ [Monthly] / [Yearly] ← Save 20%!                    │
+│                                                      │
+│ ┌──────┐  ┌──────┐  ┌──────┐                       │
+│ │ FREE │  │BASIC │  │ PRO  │                       │
+│ │      │  │⭐    │  │💎BEST│                       │
+│ │  Rp  │  │  Rp  │  │  Rp  │                       │
+│ │  0   │  │ 50K  │  │ 75K  │                       │
+│ │/month│  │/month│  │/month│                       │
+│ │      │  │      │  │      │                       │
+│ │  5   │  │ 500  │  │  ∞   │ ← Infinity symbol     │
+│ │ msg  │  │ msg  │  │ msg  │                       │
+│ │      │  │      │  │      │                       │
+│ │[Use] │  │[Buy] │  │[Buy] │                       │
+│ └──────┘  └──────┘  └──────┘                       │
+│           Save 120K! Save 180K! (if yearly)         │
+└──────────────────────────────────────────────────────┘
+```
+
+**Code Structure**:
+```tsx
+export function PricingPlans() {
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly')
+  const { data: plans } = usePricingPlans()
+  const { subscription } = useSubscription()
+  
+  const filteredPlans = plans.filter(p => p.billing_cycle === billingCycle)
+  
+  return (
+    <div className="space-y-6">
+      {/* Billing Cycle Toggle */}
+      <div className="flex justify-center">
+        <div className="inline-flex rounded-lg border p-1">
+          <Button
+            variant={billingCycle === 'monthly' ? 'default' : 'ghost'}
+            onClick={() => setBillingCycle('monthly')}
+          >
+            Monthly
+          </Button>
+          <Button
+            variant={billingCycle === 'yearly' ? 'default' : 'ghost'}
+            onClick={() => setBillingCycle('yearly')}
+          >
+            Yearly
+            {billingCycle === 'yearly' && <Badge className="ml-2">Save 20%</Badge>}
+          </Button>
+        </div>
+      </div>
+      
+      {/* Pricing Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {filteredPlans.map(plan => (
+          <PricingCard
+            key={plan.id}
+            plan={plan}
+            isCurrentPlan={plan.plan_type === subscription.plan_type}
+            onSelect={() => handleSelectPlan(plan)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PricingCard({ plan, isCurrentPlan, onSelect }) {
+  const displayQuota = plan.quota >= 999999 || plan.quota === -1 ? '∞' : plan.quota
+  
+  return (
+    <Card className={cn(
+      "relative",
+      plan.plan_type === 'pro' && "border-purple-500 shadow-lg"
+    )}>
+      {plan.plan_type === 'pro' && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+          <Badge className="bg-purple-500">BEST VALUE</Badge>
+        </div>
+      )}
+      
+      <CardHeader>
+        <CardTitle className="text-center">
+          {plan.plan_name.split(' - ')[0]}
+        </CardTitle>
+        <div className="text-center">
+          <span className="text-3xl font-bold">
+            {formatCurrency(plan.price)}
+          </span>
+          <span className="text-sm text-muted-foreground">
+            /{plan.billing_cycle}
+          </span>
+        </div>
+      </CardHeader>
+      
+      <CardContent>
+        <div className="text-center mb-4">
+          <span className="text-2xl font-bold">{displayQuota}</span>
+          <span className="text-sm"> messages/month</span>
+        </div>
+        
+        {/* Features List */}
+        <ul className="space-y-2 mb-6">
+          {plan.features.map((feature, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm">
+              <Check className="h-4 w-4 text-green-500 mt-0.5" />
+              <span>{feature}</span>
+            </li>
+          ))}
+        </ul>
+        
+        {/* CTA Button */}
+        <Button
+          className="w-full"
+          variant={isCurrentPlan ? 'outline' : 'default'}
+          disabled={isCurrentPlan}
+          onClick={onSelect}
+        >
+          {isCurrentPlan ? 'Current Plan' : 'Select Plan'}
+        </Button>
+        
+        {plan.discount_percentage > 0 && (
+          <p className="text-center text-sm text-green-600 mt-2">
+            Save Rp {calculateSavings(plan)}K/year
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+**Tasks**:
+- [ ] Create PricingPlans component
+- [ ] Add billing cycle toggle (Monthly/Yearly)
+- [ ] Create PricingCard sub-component
+- [ ] Display ∞ for Pro plan quota
+- [ ] Add "BEST VALUE" badge for Pro
+- [ ] Show savings for yearly plans
+- [ ] Highlight current plan
+- [ ] Add select plan handler
+- [ ] Make responsive (stack on mobile)
+
+---
+
+### 4.5 Payment Method Modal
+
+**File**: `src/components/settings/subscription/PaymentMethodModal.tsx`
+
+**UI Flow**:
+1. Select payment method (Bank Transfer, E-Wallet, QRIS, CC)
+2. Show payment instructions (QR Code / VA Number)
+3. Poll payment status
+4. Show success/failure
+
+**Code Structure**:
+```tsx
+export function PaymentMethodModal({ isOpen, onClose, planId }) {
+  const [step, setStep] = useState<'select' | 'instructions' | 'processing'>('select')
+  const [paymentMethod, setPaymentMethod] = useState('')
+  const [paymentData, setPaymentData] = useState(null)
+  
+  const handleCreatePayment = async () => {
+    const { data } = await supabase.functions.invoke('create-payment', {
+      body: { plan_id: planId, payment_method: paymentMethod }
+    })
+    setPaymentData(data)
+    setStep('instructions')
+    startPolling(data.transaction_id)
+  }
+  
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        {step === 'select' && (
+          <PaymentMethodSelection
+            selected={paymentMethod}
+            onSelect={setPaymentMethod}
+            onContinue={handleCreatePayment}
+          />
+        )}
+        
+        {step === 'instructions' && (
+          <PaymentInstructions
+            paymentData={paymentData}
+            method={paymentMethod}
+          />
+        )}
+        
+        {step === 'processing' && (
+          <PaymentProcessing />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function PaymentMethodSelection({ selected, onSelect, onContinue }) {
+  const methods = [
+    { id: 'bank_transfer', name: 'Bank Transfer', icon: Building2, providers: ['BCA', 'Mandiri', 'BNI', 'BRI'] },
+    { id: 'e_wallet', name: 'E-Wallet', icon: Wallet, providers: ['GoPay', 'OVO', 'DANA', 'ShopeePay'] },
+    { id: 'qris', name: 'QRIS', icon: QrCode },
+    { id: 'credit_card', name: 'Credit Card', icon: CreditCard }
+  ]
+  
+  return (
+    <div className="space-y-4">
+      <DialogHeader>
+        <DialogTitle>Select Payment Method</DialogTitle>
+      </DialogHeader>
+      
+      <RadioGroup value={selected} onValueChange={onSelect}>
+        {methods.map(method => (
+          <div key={method.id} className="flex items-center space-x-2 border rounded-lg p-4">
+            <RadioGroupItem value={method.id} id={method.id} />
+            <Label htmlFor={method.id} className="flex items-center gap-3 cursor-pointer flex-1">
+              <method.icon className="h-5 w-5" />
+              <div>
+                <p className="font-medium">{method.name}</p>
+                {method.providers && (
+                  <p className="text-xs text-muted-foreground">
+                    {method.providers.join(', ')}
+                  </p>
+                )}
+              </div>
+            </Label>
+          </div>
+        ))}
+      </RadioGroup>
+      
+      <Button onClick={onContinue} disabled={!selected} className="w-full">
+        Continue
+      </Button>
+    </div>
+  )
+}
+
+function PaymentInstructions({ paymentData, method }) {
+  return (
+    <div className="space-y-4">
+      <DialogHeader>
+        <DialogTitle>Payment Instructions</DialogTitle>
+      </DialogHeader>
+      
+      {method === 'qris' && paymentData.duitku_qr_string && (
+        <div className="flex flex-col items-center space-y-4">
+          <QRCodeSVG value={paymentData.duitku_qr_string} size={256} />
+          <p className="text-sm text-center">Scan QR Code with your e-wallet app</p>
+        </div>
+      )}
+      
+      {method === 'bank_transfer' && paymentData.duitku_va_number && (
+        <div className="space-y-4">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <p className="text-sm font-medium mb-2">Virtual Account Number:</p>
+            <div className="flex items-center justify-between">
+              <code className="text-lg font-mono">{paymentData.duitku_va_number}</code>
+              <Button size="sm" variant="outline" onClick={() => copyToClipboard(paymentData.duitku_va_number)}>
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <Alert>
+            <AlertDescription>
+              Transfer exactly <strong>{formatCurrency(paymentData.amount)}</strong> to the VA number above
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+      
+      {/* Payment Expiry Countdown */}
+      <div className="text-center">
+        <p className="text-sm text-muted-foreground">
+          Payment expires in: <CountdownTimer expiry={paymentData.expired_at} />
+        </p>
+      </div>
+      
+      {/* Status Polling Indicator */}
+      <div className="flex items-center justify-center gap-2 text-sm">
+        <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+        <span>Waiting for payment...</span>
+      </div>
+    </div>
+  )
+}
+```
+
+**Tasks**:
+- [ ] Create modal component with Dialog (shadcn)
+- [ ] Implement payment method selection
+- [ ] Add QR Code display (qrcode.react)
+- [ ] Add VA number display with copy button
+- [ ] Implement payment status polling (every 5s)
+- [ ] Add countdown timer for expiry
+- [ ] Handle payment success (close modal, refresh subscription)
+- [ ] Handle payment failure (show error, retry option)
+- [ ] Add loading states
+
+---
+
+### 4.6 Payment History Table
+
+**File**: `src/components/settings/subscription/PaymentHistoryTable.tsx`
+
+**UI Layout**:
+```
+┌────────────────────────────────────────────────────────┐
+│ Payment History                                        │
+│ [Filter: All ▼] [Search...]                           │
+│                                                        │
+│ Date       | Amount    | Method  | Plan  | Status     │
+│ ──────────────────────────────────────────────────── │
+│ 2025-11-21 | Rp 299K   | GoPay   | Pro   | ✓ Success  │
+│ 2025-10-21 | Rp 299K   | BCA VA  | Pro   | ✓ Success  │
+│ 2025-09-21 | Rp 99K    | QRIS    | Basic | ✗ Failed   │
+│                                                        │
+│ [← Previous] Page 1 of 3 [Next →]                     │
+└────────────────────────────────────────────────────────┘
+```
+
+**Code Structure**:
+```tsx
+export function PaymentHistoryTable() {
+  const [filter, setFilter] = useState<'all' | 'success' | 'pending' | 'failed'>('all')
+  const [page, setPage] = useState(1)
+  const { data: transactions, loading } = usePaymentHistory({ filter, page })
+  
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>Payment History</CardTitle>
+          <div className="flex gap-2">
+            <Select value={filter} onValueChange={setFilter}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="success">Success</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Method</TableHead>
+              <TableHead>Plan</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Invoice</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {transactions.map(tx => (
+              <TableRow key={tx.id}>
+                <TableCell>{formatDate(tx.created_at)}</TableCell>
+                <TableCell>{formatCurrency(tx.amount)}</TableCell>
+                <TableCell>{tx.payment_method}</TableCell>
+                <TableCell>{tx.plan_purchased}</TableCell>
+                <TableCell>
+                  <Badge variant={getStatusVariant(tx.status)}>
+                    {tx.status}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {tx.invoice_pdf_url && (
+                    <Button size="sm" variant="ghost" onClick={() => downloadInvoice(tx.id)}>
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        
+        {/* Pagination */}
+        <div className="flex items-center justify-between mt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(p => p - 1)}
+            disabled={page === 1}
+          >
+            Previous
+          </Button>
+          <span className="text-sm">Page {page}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage(p => p + 1)}
+            disabled={transactions.length < 10}
+          >
+            Next
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+**Tasks**:
+- [ ] Create table component (shadcn Table)
+- [ ] Add filter dropdown (All/Success/Pending/Failed)
+- [ ] Implement pagination
+- [ ] Add status badges with colors
+- [ ] Add download invoice button
+- [ ] Handle empty state
+- [ ] Add loading skeleton
+- [ ] Format dates and currency
+
+---
+
+**Continue to Phase 5 for other Settings tabs...**
