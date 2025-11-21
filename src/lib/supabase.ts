@@ -133,7 +133,7 @@ export const rpcHelpers = {
       const result = data[0];
       return {
         success: result.success,
-        quota_id: result.quota_id,
+        reservation_id: result.reservation_id,
         messages_remaining: result.messages_remaining,
         error_message: result.error_message
       };
@@ -148,11 +148,11 @@ export const rpcHelpers = {
     }
   },
 
-  async commitQuotaUsage(quotaId: string, messagesUsed: number = 1) {
+  async commitQuotaUsage(reservationId: string, successCount: number = 1) {
     try {
       const { data, error } = await supabase.rpc('commit_quota_usage', {
-        p_quota_id: quotaId,
-        p_messages_used: messagesUsed
+        p_reservation_id: reservationId,
+        p_success_count: successCount
       });
 
       if (error) throw error;

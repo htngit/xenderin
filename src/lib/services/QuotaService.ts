@@ -241,7 +241,7 @@ export class QuotaService {
 
       return {
         success: true,
-        reservation_id: result.quota_id || `reserve_${Date.now()}`,
+        reservation_id: result.reservation_id || `reserve_${Date.now()}`,
         error_message: undefined
       };
     } catch (error) {
