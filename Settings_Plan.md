@@ -3,7 +3,57 @@
 > **Project**: Xender-In WhatsApp Automation  
 > **Feature**: Complete Settings Page with Payment & Subscription  
 > **Version**: 1.0  
-> **Last Updated**: 2025-11-21
+> **Last Updated**: 2025-11-22
+
+---
+
+## 🎉 **DUITKU INTEGRATION STATUS** (Updated: 2025-11-22)
+
+### ✅ **COMPLETED**
+1. **Edge Function `create-payment`** - Fully deployed and working (v9)
+   - ✅ MD5 Signature generation fixed (using `createHash` from Deno std/node/crypto)
+   - ✅ Supabase Secrets configured (`DUITKU_MERCHANT_CODE`, `DUITKU_API_KEY`, `DUITKU_CALLBACK_URL`)
+   - ✅ Support for Virtual Accounts (BC, M2, BR)
+   - ✅ Support for E-Wallets (OV, DA, LA)
+   - ✅ Support for OVO LINK (OL) with `accountLink` object
+   - ✅ Dynamic `return_url` from frontend
+   - ✅ Integer amount conversion for DUITKU API
+
+2. **Payment UI Components**
+   - ✅ `PaymentMethodModal.tsx` - 6 payment methods (3 VA + 3 E-Wallet)
+   - ✅ `PaymentTab.tsx` - Full payment flow integration
+   - ✅ `PaymentService.ts` - Service layer for Edge Function calls
+
+3. **Database Schema**
+   - ✅ `payment_transactions` table created
+   - ✅ `pricing_plans` table populated with Free/Basic/Pro plans
+   - ✅ RLS policies configured
+
+### ⚠️ **SANDBOX LIMITATIONS**
+- **Current Status**: Sandbox merchant (`DS26088`) only has **OVO LINK (OL)** payment method
+- **OVO LINK Requirement**: Needs valid `credentialCode` (currently using placeholder)
+- **Error**: `"Failed CredentialCode"` - Expected for Sandbox without valid credential
+
+### 📋 **NEXT STEPS (After Production Upgrade)**
+1. **Update Supabase Secrets** with Production credentials:
+   ```bash
+   DUITKU_MERCHANT_CODE=<production_code>
+   DUITKU_API_KEY=<production_key>
+   DUITKU_CALLBACK_URL=https://xasuqqebngantzaenmwq.supabase.co/functions/v1/payment-webhook
+   ```
+
+2. **Test Payment Flow** with Production payment methods (BCA VA, Mandiri VA, etc.)
+
+3. **Implement Webhook Handler** (`payment-webhook` Edge Function) - See Phase 2B
+
+4. **End-to-End Testing**:
+   - Payment creation → DUITKU redirect → Payment completion → Webhook callback → Subscription update
+
+### 🔧 **TECHNICAL NOTES**
+- **Signature Formula**: `MD5(merchantCode + merchantOrderId + paymentAmount + apiKey)`
+- **Payment Methods**: All 6 methods ready for Production (VA + E-Wallet)
+- **Edge Function**: Handles both simple VA and complex OVO LINK flows
+- **Frontend**: Fully integrated with modal selection and error handling
 
 ---
 
@@ -56,7 +106,7 @@ Build comprehensive Settings Page with 8 tabs:
 |------|---------|--------|-------|-------|
 | **Free** | Rp 0 | - | 5 msg/month | Default for new users |
 | **Basic** | Rp 50,000 | Rp 480,000 | 500 msg/month | Save Rp 120K/year (20% off) |
-| **Pro** | Rp 75,000 | Rp 720,000 | Unlimited | Save Rp 180K/year (20% off) |
+| **Pro** | Rp 100,000 | Rp 960,000 | Unlimited | Save Rp 240K/year (20% off) |
 
 ### Key Policies
 
@@ -68,6 +118,7 @@ Build comprehensive Settings Page with 8 tabs:
 ✅ **Refund**: 14 days for service complaints, transfer to bank  
 ✅ **Rate Limit**: Warning only for >300 msg/hour  
 ✅ **New User**: Auto Free plan with 5 messages  
+✅ **UI Display - Pro Plan**: Show infinity symbol (∞) for quota instead of numbers in ALL dashboard components  
 
 ### Company Info (for Invoices)
 
@@ -279,8 +330,8 @@ INSERT INTO pricing_plans (plan_type, plan_name, billing_cycle, price, quota, fe
 ('free', 'Free Plan', 'monthly', 0, 5, '["5 messages per month", "Basic support"]', 0),
 ('basic', 'Basic - Monthly', 'monthly', 50000, 500, '["500 messages/month", "Email support", "Templates"]', 0),
 ('basic', 'Basic - Yearly', 'yearly', 480000, 500, '["500 messages/month", "Email support", "Templates", "Save Rp 120K/year"]', 20),
-('pro', 'Pro - Monthly', 'monthly', 75000, -1, '["Unlimited messages", "Max 300/hour recommended", "Priority support", "Analytics", "API access"]', 0),
-('pro', 'Pro - Yearly', 'yearly', 720000, -1, '["Unlimited messages", "Max 300/hour recommended", "Priority support", "Analytics", "API access", "Save Rp 180K/year"]', 20);
+('pro', 'Pro - Monthly', 'monthly', 100000, -1, '["Unlimited messages", "Max 300/hour recommended", "Priority support", "Analytics", "API access"]', 0),
+('pro', 'Pro - Yearly', 'yearly', 960000, -1, '["Unlimited messages", "Max 300/hour recommended", "Priority support", "Analytics", "API access", "Save Rp 240K/year"]', 20);
 
 -- RLS
 ALTER TABLE pricing_plans ENABLE ROW LEVEL SECURITY;

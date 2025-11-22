@@ -298,12 +298,22 @@ export function validateAssetFile(data: any): AssetFile | null {
 
     const validated: AssetFile = {
       id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
-      name: sanitizeString(data.name, 'name', 255),
-      size: sanitizeNumber(data.size, 'size', 0),
-      type: sanitizeString(data.type, 'type', 100),
-      uploadDate: String(data.uploadDate),
-      url: data.url ? sanitizeString(data.url, 'url', 1000) : undefined,
-      category
+      name: sanitizeString(data.name || data.file_name, 'name', 255),
+      file_name: sanitizeString(data.file_name || data.name, 'file_name', 255),
+      file_size: sanitizeNumber(data.file_size || data.size, 'file_size', 0),
+      file_type: sanitizeString(data.file_type || data.type, 'file_type', 100),
+      file_url: sanitizeString(data.file_url || data.url, 'file_url', 1000),
+      uploaded_by: isValidUUID(data.uploaded_by) ? data.uploaded_by : '',
+      category,
+      mime_type: data.mime_type ? sanitizeString(data.mime_type, 'mime_type', 100) : undefined,
+      is_public: sanitizeBoolean(data.is_public, 'is_public'),
+      created_at: String(data.created_at || data.uploadDate || new Date().toISOString()),
+      updated_at: String(data.updated_at || data.created_at || new Date().toISOString()),
+      // Backward compatibility fields
+      size: sanitizeNumber(data.size || data.file_size, 'size', 0),
+      type: sanitizeString(data.type || data.file_type, 'type', 100),
+      uploadDate: String(data.uploadDate || data.created_at || new Date().toISOString()),
+      url: data.url || data.file_url
     };
 
     return validated;

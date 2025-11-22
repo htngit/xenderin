@@ -13,3 +13,5 @@ export * from './types';
 
 // Export Payment Service
 export { PaymentService, paymentService } from './PaymentService';
+export { subscriptionService } from './SubscriptionService';
+export { billingService } from './BillingService';

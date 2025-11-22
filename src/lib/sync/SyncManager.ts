@@ -192,7 +192,7 @@ export class SyncManager {
   /**
    * Set the current master user ID for sync operations
    */
-  setMasterUserId(masterUserId: string) {
+  setMasterUserId(masterUserId: string | null) {
     this.masterUserId = masterUserId;
   }
 
@@ -501,7 +501,9 @@ export class SyncManager {
       const { data: { user }, error: authError } = authResult as any;
 
       if (authError || !user) {
-        throw new Error('User not authenticated');
+        console.warn('Sync skipped: User not authenticated');
+        this.setStatus(SyncStatus.IDLE, 'Waiting for authentication');
+        return;
       }
 
       // Get pending sync operations with priority sorting
@@ -793,7 +795,7 @@ export class SyncManager {
 
     // Remove sync metadata before sending to server
     const { _syncStatus, _lastModified, _version, _deleted, _compressed, _compressionKey, assets, ...serverData } = data;
-    
+
     // Filter out legacy/local-only fields for assets table
     if (table === 'assets') {
       delete (serverData as any).size;
@@ -818,7 +820,7 @@ export class SyncManager {
     // Remove sync metadata before sending to server
     const { _syncStatus, _lastModified, _version, _deleted, _compressed, _compressionKey, assets, ...serverData } = data;
     serverData.updated_at = nowISO();
-    
+
     // Filter out legacy/local-only fields for assets table
     if (table === 'assets') {
       delete (serverData as any).size;
@@ -1386,3 +1388,5 @@ export class SyncManager {
     console.log('SyncManager destroyed and resources cleaned up');
   }
 }
+
+export const syncManager = new SyncManager();

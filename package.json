@@ -60,6 +60,7 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
     "react-hook-form": "^7.60.0",
+    "react-intl": "^7.1.14",
     "react-resizable-panels": "^3.0.3",
     "react-router-dom": "^7.9.6",
     "recharts": "^2.15.4",

@@ -21,6 +21,8 @@ import {
   Send
 } from 'lucide-react';
 
+type ViewType = 'login' | 'register' | 'forgot-password' | 'success-register' | 'success-reset';
+
 interface LoginPageProps {
   onLoginSuccess: (authData: AuthResponse) => void;
   initialView?: ViewType;
@@ -95,29 +97,41 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
         return; // Success, exit function
       } catch (err: any) {
         lastError = err;
+        const errorMessage = err.message?.toLowerCase() || '';
         console.warn(`Registration attempt ${attempt} failed:`, err.message);
 
-        // If it's not a timeout/retryable error, don't retry
-        if (!err.message?.includes('timeout') &&
-          !err.message?.includes('504') &&
-          !err.message?.includes('network') &&
-          !err.message?.includes('fetch')) {
+        // If it's a rate limit error (429), stop immediately - don't retry
+        if (errorMessage.includes('rate limit') ||
+          errorMessage.includes('429') ||
+          errorMessage.includes('too many requests')) {
+          console.error('Rate limit detected, stopping retries');
           break;
         }
 
-        // Wait before retry (exponential backoff)
+        // If it's not a timeout/retryable error, don't retry
+        if (!errorMessage.includes('timeout') &&
+          !errorMessage.includes('504') &&
+          !errorMessage.includes('gateway') &&
+          !errorMessage.includes('network') &&
+          !errorMessage.includes('fetch')) {
+          break;
+        }
+
+        // Wait before retry (exponential backoff) - only for timeout/network errors
         if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 500); // Max 5 seconds
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
+          console.log(`Waiting ${delay}ms before retry ${attempt + 1}...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
 
     // All retries failed
-    setError(lastError?.message || 'Registration failed after multiple attempts');
+    const errorMsg = lastError?.message || 'Registration failed after multiple attempts';
+    setError(errorMsg);
     toast({
       title: "Error",
-      description: lastError?.message || 'Registration failed after multiple attempts',
+      description: errorMsg,
       variant: "destructive"
     });
     setIsLoading(false);
