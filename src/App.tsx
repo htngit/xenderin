@@ -20,9 +20,11 @@ import { SettingsPage } from '@/components/pages/SettingsPage';
 import { ServiceProvider } from '@/lib/services/ServiceContext';
 import { AuthResponse, PINValidation } from '@/lib/services';
 import { AuthService } from '@/lib/services/AuthService';
-import { rpcHelpers } from '@/lib/supabase';
+import { syncManager } from '@/lib/sync/SyncManager';
+
 import { Toaster } from '@/components/ui/toaster';
 import { UserProvider } from '@/lib/security/UserProvider';
+import { IntlProvider } from '@/lib/i18n/IntlProvider';
 
 // Public routes component
 const PublicRoutes = ({
@@ -185,6 +187,17 @@ const MainApp = () => {
 
       // 3. Set PIN data to unlock the UI
       setPinData(data);
+
+      // 4. Start Sync Manager (Deferred until PIN is validated)
+      if (authData?.user?.master_user_id) {
+        syncManager.setMasterUserId(authData.user.master_user_id);
+      } else {
+        // Fallback if authData isn't fully ready, though it should be
+        const user = await authService.getCurrentUser();
+        if (user?.master_user_id) {
+          syncManager.setMasterUserId(user.master_user_id);
+        }
+      }
     } catch (error) {
       console.error("Failed to load account data after PIN:", error);
       // Handle error (maybe show toast)
@@ -193,9 +206,15 @@ const MainApp = () => {
 
   const handleLogout = async () => {
     const authService = new AuthService();
-    await authService.logout();
-    setAuthData(null);
-    setPinData(null);
+    try {
+      await authService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setAuthData(null);
+      setPinData(null);
+      syncManager.setMasterUserId(null);
+    }
   };
 
   if (isRestoringSession) {
@@ -237,7 +256,9 @@ const MainApp = () => {
 export default function App() {
   return (
     <UserProvider>
-      <MainApp />
+      <IntlProvider>
+        <MainApp />
+      </IntlProvider>
     </UserProvider>
   );
 }

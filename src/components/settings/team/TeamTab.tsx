@@ -74,17 +74,13 @@ export function TeamTab() {
                                 Interested in Team Features?
                             </h3>
                             <p className="text-sm text-muted-foreground">
-                                Join our waitlist to be notified when Team Management becomes available
+                                Stay tuned for updates!
                             </p>
                         </div>
-                        <Button size="lg" className="gap-2">
-                            <Users className="h-4 w-4" />
-                            Join Waitlist
-                        </Button>
                     </div>
 
                     <div className="text-center text-xs text-muted-foreground">
-                        <p>Expected Release: Q2 2026</p>
+                        <p>Expected Release: in 2026</p>
                     </div>
                 </CardContent>
             </Card>

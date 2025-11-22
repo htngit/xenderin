@@ -352,7 +352,7 @@ export class AuthService {
     }
   }
 
-  // Create user profile
+  // Create or update user profile
   private async createProfile(profileData: {
     id: string;
     email: string;
@@ -363,13 +363,13 @@ export class AuthService {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .insert({
+        .upsert({
           id: profileData.id,
           email: profileData.email,
           name: profileData.name,
           role: profileData.role,
           master_user_id: profileData.master_user_id
-        })
+        }, { onConflict: 'id' })
         .select()
         .single();
 

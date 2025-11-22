@@ -6,6 +6,8 @@ import { PaymentTab } from '@/components/settings/payment/PaymentTab';
 import { ProfileTab } from '@/components/settings/profile/ProfileTab';
 import { DatabaseTab } from '@/components/settings/database/DatabaseTab';
 import { TeamTab } from '@/components/settings/team/TeamTab';
+import { FormattedMessage } from 'react-intl';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 interface SettingsPageProps {
   userName: string;
@@ -13,6 +15,7 @@ interface SettingsPageProps {
 
 export function SettingsPage({ userName }: SettingsPageProps) {
   const navigate = useNavigate();
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -22,13 +25,22 @@ export function SettingsPage({ userName }: SettingsPageProps) {
           <div className="flex items-center space-x-4">
             <Button variant="ghost" onClick={() => navigate('/dashboard')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
+              <FormattedMessage id="common.button.back" defaultMessage="Back" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-              <p className="text-gray-600">Welcome, {userName} - Manage your account and preferences</p>
+              <h1 className="text-3xl font-bold text-gray-900">
+                <FormattedMessage id="settings.title" defaultMessage="Settings" />
+              </h1>
+              <p className="text-gray-600">
+                <FormattedMessage
+                  id="settings.subtitle"
+                  defaultMessage="Welcome, {name} - Manage your account and preferences"
+                  values={{ name: userName }}
+                />
+              </p>
             </div>
           </div>
+          <LanguageSwitcher />
         </div>
 
         {/* Settings Tabs */}
@@ -36,33 +48,57 @@ export function SettingsPage({ userName }: SettingsPageProps) {
           <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6 lg:w-auto lg:inline-grid mb-6">
             <TabsTrigger value="payment" className="flex items-center gap-2">
               <CreditCard className="h-4 w-4" />
-              <span className="hidden sm:inline">Payment & Subscription</span>
-              <span className="sm:hidden">Payment</span>
+              <span className="hidden sm:inline">
+                <FormattedMessage id="settings.tab.payment" defaultMessage="Payment & Subscription" />
+              </span>
+              <span className="sm:hidden">
+                <FormattedMessage id="settings.tab.payment.short" defaultMessage="Payment" />
+              </span>
             </TabsTrigger>
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
-              <span className="hidden sm:inline">Account & Profile</span>
-              <span className="sm:hidden">Profile</span>
+              <span className="hidden sm:inline">
+                <FormattedMessage id="settings.tab.profile" defaultMessage="Account & Profile" />
+              </span>
+              <span className="sm:hidden">
+                <FormattedMessage id="settings.tab.profile.short" defaultMessage="Profile" />
+              </span>
             </TabsTrigger>
             <TabsTrigger value="database" className="flex items-center gap-2">
               <Database className="h-4 w-4" />
-              <span className="hidden sm:inline">Database & Sync</span>
-              <span className="sm:hidden">Database</span>
+              <span className="hidden sm:inline">
+                <FormattedMessage id="settings.tab.database" defaultMessage="Database & Sync" />
+              </span>
+              <span className="sm:hidden">
+                <FormattedMessage id="settings.tab.database.short" defaultMessage="Database" />
+              </span>
             </TabsTrigger>
             <TabsTrigger value="team" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              <span className="hidden sm:inline">Team</span>
-              <span className="sm:hidden">Team</span>
+              <span className="hidden sm:inline">
+                <FormattedMessage id="settings.tab.team" defaultMessage="Team" />
+              </span>
+              <span className="sm:hidden">
+                <FormattedMessage id="settings.tab.team.short" defaultMessage="Team" />
+              </span>
             </TabsTrigger>
             <TabsTrigger value="notifications" className="flex items-center gap-2">
               <Bell className="h-4 w-4" />
-              <span className="hidden sm:inline">Notifications</span>
-              <span className="sm:hidden">Alerts</span>
+              <span className="hidden sm:inline">
+                <FormattedMessage id="settings.tab.notifications" defaultMessage="Notifications" />
+              </span>
+              <span className="sm:hidden">
+                <FormattedMessage id="settings.tab.notifications.short" defaultMessage="Alerts" />
+              </span>
             </TabsTrigger>
             <TabsTrigger value="security" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
-              <span className="hidden sm:inline">Security</span>
-              <span className="sm:hidden">Security</span>
+              <span className="hidden sm:inline">
+                <FormattedMessage id="settings.tab.security" defaultMessage="Security" />
+              </span>
+              <span className="sm:hidden">
+                <FormattedMessage id="settings.tab.security.short" defaultMessage="Security" />
+              </span>
             </TabsTrigger>
           </TabsList>
 
@@ -85,16 +121,24 @@ export function SettingsPage({ userName }: SettingsPageProps) {
           <TabsContent value="notifications">
             <div className="text-center py-20 text-muted-foreground">
               <Bell className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">Notification Settings</p>
-              <p className="text-sm">Coming soon...</p>
+              <p className="text-lg font-medium">
+                <FormattedMessage id="settings.notifications.title" defaultMessage="Notification Settings" />
+              </p>
+              <p className="text-sm">
+                <FormattedMessage id="common.status.coming_soon" defaultMessage="Coming soon..." />
+              </p>
             </div>
           </TabsContent>
 
           <TabsContent value="security">
             <div className="text-center py-20 text-muted-foreground">
               <Shield className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">Security Settings</p>
-              <p className="text-sm">Coming soon...</p>
+              <p className="text-lg font-medium">
+                <FormattedMessage id="settings.security.title" defaultMessage="Security Settings" />
+              </p>
+              <p className="text-sm">
+                <FormattedMessage id="common.status.coming_soon" defaultMessage="Coming soon..." />
+              </p>
             </div>
           </TabsContent>
         </Tabs>

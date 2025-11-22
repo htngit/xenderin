@@ -20,6 +20,8 @@ import {
   Loader2,
   Send
 } from 'lucide-react';
+import { useIntl, FormattedMessage } from 'react-intl';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 type ViewType = 'login' | 'register' | 'forgot-password' | 'success-register' | 'success-reset';
 
@@ -40,6 +42,7 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
   const [error, setError] = useState('');
 
   const { toast } = useToast();
+  const intl = useIntl();
   const authService = useMemo(() => new AuthService(), []);
 
   const resetForm = () => {
@@ -64,11 +67,18 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
 
     try {
       const response = await authService.login(email, password);
-      toast({ title: "Success!", description: "Logged in successfully" });
+      toast({
+        title: intl.formatMessage({ id: 'common.status.success', defaultMessage: 'Success!' }),
+        description: intl.formatMessage({ id: 'auth.login.success', defaultMessage: 'Logged in successfully' })
+      });
       onLoginSuccess(response);
     } catch (err: any) {
-      setError(err.message || 'Login failed');
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setError(err.message || intl.formatMessage({ id: 'auth.login.failed', defaultMessage: 'Login failed' }));
+      toast({
+        title: intl.formatMessage({ id: 'common.status.error', defaultMessage: 'Error' }),
+        description: err.message,
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -79,62 +89,39 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
     setError('');
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(intl.formatMessage({ id: 'auth.register.password_mismatch', defaultMessage: 'Passwords do not match' }));
       return;
     }
 
     setIsLoading(true);
 
-    // Retry logic for registration with exponential backoff
-    const maxRetries = 3;
-    let lastError: any = null;
+    try {
+      const response = await authService.register(email, password, name);
+      toast({
+        title: intl.formatMessage({ id: 'common.status.success', defaultMessage: 'Success!' }),
+        description: intl.formatMessage({ id: 'auth.register.success', defaultMessage: 'Account created successfully' })
+      });
+      onLoginSuccess(response);
+    } catch (err: any) {
+      const errorMessage = err.message?.toLowerCase() || '';
+      console.error('Registration failed:', err.message);
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await authService.register(email, password, name);
-        toast({ title: "Success!", description: "Account created successfully" });
-        onLoginSuccess(response);
-        return; // Success, exit function
-      } catch (err: any) {
-        lastError = err;
-        const errorMessage = err.message?.toLowerCase() || '';
-        console.warn(`Registration attempt ${attempt} failed:`, err.message);
+      // Handle specific error cases if needed
+      let displayError = err.message || intl.formatMessage({ id: 'auth.register.failed', defaultMessage: 'Registration failed' });
 
-        // If it's a rate limit error (429), stop immediately - don't retry
-        if (errorMessage.includes('rate limit') ||
-          errorMessage.includes('429') ||
-          errorMessage.includes('too many requests')) {
-          console.error('Rate limit detected, stopping retries');
-          break;
-        }
-
-        // If it's not a timeout/retryable error, don't retry
-        if (!errorMessage.includes('timeout') &&
-          !errorMessage.includes('504') &&
-          !errorMessage.includes('gateway') &&
-          !errorMessage.includes('network') &&
-          !errorMessage.includes('fetch')) {
-          break;
-        }
-
-        // Wait before retry (exponential backoff) - only for timeout/network errors
-        if (attempt < maxRetries) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
-          console.log(`Waiting ${delay}ms before retry ${attempt + 1}...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
+      if (errorMessage.includes('already registered') || errorMessage.includes('unique constraint')) {
+        displayError = intl.formatMessage({ id: 'auth.register.email_exists', defaultMessage: 'Email already registered. Please login.' });
       }
-    }
 
-    // All retries failed
-    const errorMsg = lastError?.message || 'Registration failed after multiple attempts';
-    setError(errorMsg);
-    toast({
-      title: "Error",
-      description: errorMsg,
-      variant: "destructive"
-    });
-    setIsLoading(false);
+      setError(displayError);
+      toast({
+        title: intl.formatMessage({ id: 'common.status.error', defaultMessage: 'Error' }),
+        description: displayError,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -144,11 +131,18 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
 
     try {
       await authService.forgotPassword(email);
-      toast({ title: "Success!", description: "Reset email sent" });
+      toast({
+        title: intl.formatMessage({ id: 'common.status.success', defaultMessage: 'Success!' }),
+        description: intl.formatMessage({ id: 'auth.forgot_password.sent', defaultMessage: 'Reset email sent' })
+      });
       handleViewChange('success-reset');
     } catch (err: any) {
-      setError(err.message || 'Failed to send reset email');
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setError(err.message || intl.formatMessage({ id: 'auth.forgot_password.failed', defaultMessage: 'Failed to send reset email' }));
+      toast({
+        title: intl.formatMessage({ id: 'common.status.error', defaultMessage: 'Error' }),
+        description: err.message,
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -157,6 +151,10 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
   return (
     <div className="min-h-screen relative overflow-hidden">
       <BubbleBackground interactive={true} className="absolute inset-0" />
+
+      <div className="absolute top-4 right-4 z-50">
+        <LanguageSwitcher className="text-white hover:bg-white/20" />
+      </div>
 
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <AnimatePresence mode="wait">
@@ -176,21 +174,25 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       <Lock className="h-8 w-8 text-white" />
                     </div>
                   </div>
-                  <CardTitle className="text-3xl font-bold text-white">Xender-In</CardTitle>
+                  <CardTitle className="text-3xl font-bold text-white">
+                    <FormattedMessage id="common.app.name" defaultMessage="Xender-In" />
+                  </CardTitle>
                   <CardDescription className="text-white/80">
-                    Sign in to your WhatsApp automation account
+                    <FormattedMessage id="auth.login.subtitle" defaultMessage="Sign in to your WhatsApp automation account" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleLogin} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email" className="text-white/90">Email</Label>
+                      <Label htmlFor="email" className="text-white/90">
+                        <FormattedMessage id="auth.login.email.label" defaultMessage="Email" />
+                      </Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-5 w-5 text-white/60" />
                         <Input
                           id="email"
                           type="email"
-                          placeholder="Enter your email"
+                          placeholder={intl.formatMessage({ id: 'auth.login.email.placeholder', defaultMessage: 'Enter your email' })}
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -200,13 +202,15 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="password" className="text-white/90">Password</Label>
+                      <Label htmlFor="password" className="text-white/90">
+                        <FormattedMessage id="auth.login.password.label" defaultMessage="Password" />
+                      </Label>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 h-5 w-5 text-white/60" />
                         <Input
                           id="password"
                           type={showPassword ? 'text' : 'password'}
-                          placeholder="Enter your password"
+                          placeholder={intl.formatMessage({ id: 'auth.login.password.placeholder', defaultMessage: 'Enter your password' })}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           className="pl-10 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -237,10 +241,10 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       {isLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Signing in...
+                          <FormattedMessage id="auth.login.signing_in" defaultMessage="Signing in..." />
                         </>
                       ) : (
-                        'Sign In'
+                        <FormattedMessage id="common.button.login" defaultMessage="Sign In" />
                       )}
                     </Button>
 
@@ -250,16 +254,16 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                         onClick={() => handleViewChange('forgot-password')}
                         className="text-sm text-white/80 hover:text-white underline"
                       >
-                        Forgot password?
+                        <FormattedMessage id="auth.login.forgot_password" defaultMessage="Forgot password?" />
                       </button>
                       <div className="text-sm text-white/80">
-                        Don't have an account?{' '}
+                        <FormattedMessage id="auth.login.no_account" defaultMessage="Don't have an account?" />{' '}
                         <button
                           type="button"
                           onClick={() => handleViewChange('register')}
                           className="text-white font-semibold hover:underline"
                         >
-                          Sign up
+                          <FormattedMessage id="auth.login.sign_up_link" defaultMessage="Sign up" />
                         </button>
                       </div>
                     </div>
@@ -285,19 +289,23 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       <UserPlus className="h-8 w-8 text-white" />
                     </div>
                   </div>
-                  <CardTitle className="text-3xl font-bold text-white">Create Account</CardTitle>
+                  <CardTitle className="text-3xl font-bold text-white">
+                    <FormattedMessage id="auth.register.title" defaultMessage="Create Account" />
+                  </CardTitle>
                   <CardDescription className="text-white/80">
-                    Join Xender-In WhatsApp Automation
+                    <FormattedMessage id="auth.register.subtitle" defaultMessage="Join Xender-In WhatsApp Automation" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleRegister} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name" className="text-white/90">Full Name</Label>
+                      <Label htmlFor="name" className="text-white/90">
+                        <FormattedMessage id="auth.register.name.label" defaultMessage="Full Name" />
+                      </Label>
                       <Input
                         id="name"
                         type="text"
-                        placeholder="Enter your name"
+                        placeholder={intl.formatMessage({ id: 'auth.register.name.placeholder', defaultMessage: 'Enter your name' })}
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -306,13 +314,15 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="reg-email" className="text-white/90">Email</Label>
+                      <Label htmlFor="reg-email" className="text-white/90">
+                        <FormattedMessage id="auth.login.email.label" defaultMessage="Email" />
+                      </Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-5 w-5 text-white/60" />
                         <Input
                           id="reg-email"
                           type="email"
-                          placeholder="Enter your email"
+                          placeholder={intl.formatMessage({ id: 'auth.login.email.placeholder', defaultMessage: 'Enter your email' })}
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -322,13 +332,15 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="reg-password" className="text-white/90">Password</Label>
+                      <Label htmlFor="reg-password" className="text-white/90">
+                        <FormattedMessage id="auth.login.password.label" defaultMessage="Password" />
+                      </Label>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 h-5 w-5 text-white/60" />
                         <Input
                           id="reg-password"
                           type={showPassword ? 'text' : 'password'}
-                          placeholder="Enter your password"
+                          placeholder={intl.formatMessage({ id: 'auth.login.password.placeholder', defaultMessage: 'Enter your password' })}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           className="pl-10 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -345,13 +357,15 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="confirm-password" className="text-white/90">Confirm Password</Label>
+                      <Label htmlFor="confirm-password" className="text-white/90">
+                        <FormattedMessage id="auth.register.confirm_password.label" defaultMessage="Confirm Password" />
+                      </Label>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 h-5 w-5 text-white/60" />
                         <Input
                           id="confirm-password"
                           type={showConfirmPassword ? 'text' : 'password'}
-                          placeholder="Confirm your password"
+                          placeholder={intl.formatMessage({ id: 'auth.register.confirm_password.placeholder', defaultMessage: 'Confirm your password' })}
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           className="pl-10 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -382,10 +396,10 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       {isLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating account...
+                          <FormattedMessage id="auth.register.creating" defaultMessage="Creating account..." />
                         </>
                       ) : (
-                        'Create Account'
+                        <FormattedMessage id="auth.register.submit" defaultMessage="Create Account" />
                       )}
                     </Button>
 
@@ -395,7 +409,10 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                         onClick={() => handleViewChange('login')}
                         className="text-sm text-white/80 hover:text-white"
                       >
-                        Already have an account? <span className="font-semibold underline">Sign in</span>
+                        <FormattedMessage id="auth.register.have_account" defaultMessage="Already have an account?" />{' '}
+                        <span className="font-semibold underline">
+                          <FormattedMessage id="common.button.login" defaultMessage="Sign in" />
+                        </span>
                       </button>
                     </div>
                   </form>
@@ -420,21 +437,25 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       <Send className="h-8 w-8 text-white" />
                     </div>
                   </div>
-                  <CardTitle className="text-3xl font-bold text-white">Reset Password</CardTitle>
+                  <CardTitle className="text-3xl font-bold text-white">
+                    <FormattedMessage id="auth.forgot_password.title" defaultMessage="Reset Password" />
+                  </CardTitle>
                   <CardDescription className="text-white/80">
-                    Enter your email to receive reset instructions
+                    <FormattedMessage id="auth.forgot_password.subtitle" defaultMessage="Enter your email to receive reset instructions" />
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleForgotPassword} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="forgot-email" className="text-white/90">Email</Label>
+                      <Label htmlFor="forgot-email" className="text-white/90">
+                        <FormattedMessage id="auth.login.email.label" defaultMessage="Email" />
+                      </Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-3 h-5 w-5 text-white/60" />
                         <Input
                           id="forgot-email"
                           type="email"
-                          placeholder="Enter your email"
+                          placeholder={intl.formatMessage({ id: 'auth.login.email.placeholder', defaultMessage: 'Enter your email' })}
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:bg-white/20"
@@ -458,10 +479,10 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       {isLoading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Sending...
+                          <FormattedMessage id="auth.forgot_password.sending" defaultMessage="Sending..." />
                         </>
                       ) : (
-                        'Send Reset Email'
+                        <FormattedMessage id="auth.forgot_password.submit" defaultMessage="Send Reset Email" />
                       )}
                     </Button>
 
@@ -472,7 +493,7 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                       className="w-full bg-transparent border-white/30 text-white hover:bg-white/10"
                     >
                       <ArrowLeft className="mr-2 h-4 w-4" />
-                      Back to Login
+                      <FormattedMessage id="auth.forgot_password.back_to_login" defaultMessage="Back to Login" />
                     </Button>
                   </form>
                 </CardContent>
@@ -497,16 +518,18 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <h2 className="text-2xl font-bold text-white">Registration Successful!</h2>
+                    <h2 className="text-2xl font-bold text-white">
+                      <FormattedMessage id="auth.register.success_title" defaultMessage="Registration Successful!" />
+                    </h2>
                     <p className="text-white/80">
-                      Your account has been created successfully. You can now log in.
+                      <FormattedMessage id="auth.register.success_message" defaultMessage="Your account has been created successfully. You can now log in." />
                     </p>
                   </div>
                   <Button
                     onClick={() => handleViewChange('login')}
                     className="w-full bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm"
                   >
-                    Continue to Login
+                    <FormattedMessage id="auth.register.continue_login" defaultMessage="Continue to Login" />
                   </Button>
                 </CardContent>
               </Card>
@@ -530,16 +553,18 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <h2 className="text-2xl font-bold text-white">Reset Email Sent!</h2>
+                    <h2 className="text-2xl font-bold text-white">
+                      <FormattedMessage id="auth.forgot_password.success_title" defaultMessage="Reset Email Sent!" />
+                    </h2>
                     <p className="text-white/80">
-                      Please check your email for password reset instructions.
+                      <FormattedMessage id="auth.forgot_password.success_message" defaultMessage="Please check your email for password reset instructions." />
                     </p>
                   </div>
                   <Button
                     onClick={() => handleViewChange('login')}
                     className="w-full bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm"
                   >
-                    Back to Login
+                    <FormattedMessage id="auth.forgot_password.back_to_login" defaultMessage="Back to Login" />
                   </Button>
                 </CardContent>
               </Card>

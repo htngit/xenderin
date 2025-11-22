@@ -3,7 +3,7 @@ import { User } from '../services/types';
 import { supabase } from '../supabase';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { userContextManager } from './UserContextManager';
-import { syncManager } from '../sync/SyncManager';
+
 
 /**
  * User Context Interface
@@ -119,7 +119,7 @@ export function UserProvider({ children }: UserProviderProps) {
         console.log('Setting user state');
         setUser(userProfile);
         setMasterUserId(userProfile.master_user_id);
-        syncManager.setMasterUserId(userProfile.master_user_id);
+        // syncManager.setMasterUserId moved to App.tsx (after PIN)
 
         // Update UserContextManager
         try {
@@ -152,7 +152,7 @@ export function UserProvider({ children }: UserProviderProps) {
         };
         setUser(newUser);
         setMasterUserId(newUser.master_user_id);
-        syncManager.setMasterUserId(newUser.master_user_id);
+        // syncManager.setMasterUserId moved to App.tsx (after PIN)
 
         // Update UserContextManager with temporary user
         try {
@@ -192,7 +192,7 @@ export function UserProvider({ children }: UserProviderProps) {
     }
     setUser(null);
     setMasterUserId(null);
-    syncManager.setMasterUserId(null);
+    // syncManager.setMasterUserId(null) moved to App.tsx (handleLogout)
     setIsLoading(false);
   };
 

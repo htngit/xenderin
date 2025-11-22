@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +26,7 @@ import {
   X,
   File
 } from 'lucide-react';
+import { useIntl, FormattedMessage } from 'react-intl';
 
 interface DashboardProps {
   userName: string;
@@ -44,6 +45,7 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { masterUserId, isLoading: isUserLoading } = useUser();
+  const intl = useIntl();
 
   // App state
   const [appState, setAppState] = useState<'loading' | 'first-time-sync' | 'ready' | 'error'>('loading');
@@ -59,7 +61,7 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
     quotaRemaining: 0,
     quotaLimit: 0
   });
-  const [isConnected, setIsConnected] = useState(false);
+
 
   // Recent activity fetched from local service
   const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
@@ -177,8 +179,8 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
       const activities: Activity[] = recentLogs.map(log => ({
         id: log.id,
         type: 'send', // Simplified for now
-        description: log.template_name || 'Message Campaign',
-        time: new Date(log.created_at).toLocaleDateString(),
+        description: log.template_name || intl.formatMessage({ id: 'dashboard.activity.campaign', defaultMessage: 'Message Campaign' }),
+        time: new Date(log.created_at).toLocaleDateString(intl.locale),
         status: log.status === 'completed' ? 'success' : log.status === 'failed' ? 'failed' : 'pending'
       }));
       setRecentActivity(activities);
@@ -269,22 +271,61 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
   if (appState === 'error') {
     return (
       <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center text-center p-4">
-        <h2 className="text-xl font-bold text-red-700 mb-2">Initialization Failed</h2>
+        <h2 className="text-xl font-bold text-red-700 mb-2">
+          <FormattedMessage id="common.status.error" defaultMessage="Initialization Failed" />
+        </h2>
         <p className="text-red-600 mb-4">{error}</p>
-        <Button onClick={initializeApp}>Try Again</Button>
+        <Button onClick={initializeApp}>
+          <FormattedMessage id="common.button.try_again" defaultMessage="Try Again" />
+        </Button>
       </div>
     );
   }
 
   // Main dashboard UI (ready)
   const menuItems = [
-    { id: 'contacts', label: 'Contacts', icon: Users, description: 'Manage your contacts' },
-    { id: 'groups', label: 'Groups', icon: Users, description: 'Manage contact groups' },
-    { id: 'templates', label: 'Templates', icon: MessageSquare, description: 'Create and manage templates' },
-    { id: 'assets', label: 'Asset Files', icon: File, description: 'Upload and manage asset files' },
-    { id: 'send', label: 'Send Messages', icon: Send, description: 'Configure and send messages' },
-    { id: 'history', label: 'History', icon: Clock, description: 'View activity history' },
-    { id: 'settings', label: 'Settings', icon: Settings, description: 'App settings' }
+    {
+      id: 'contacts',
+      label: intl.formatMessage({ id: 'dashboard.menu.contacts', defaultMessage: 'Contacts' }),
+      icon: Users,
+      description: intl.formatMessage({ id: 'dashboard.menu.contacts.desc', defaultMessage: 'Manage your contacts' })
+    },
+    {
+      id: 'groups',
+      label: intl.formatMessage({ id: 'dashboard.menu.groups', defaultMessage: 'Groups' }),
+      icon: Users,
+      description: intl.formatMessage({ id: 'dashboard.menu.groups.desc', defaultMessage: 'Manage contact groups' })
+    },
+    {
+      id: 'templates',
+      label: intl.formatMessage({ id: 'dashboard.menu.templates', defaultMessage: 'Templates' }),
+      icon: MessageSquare,
+      description: intl.formatMessage({ id: 'dashboard.menu.templates.desc', defaultMessage: 'Create and manage templates' })
+    },
+    {
+      id: 'assets',
+      label: intl.formatMessage({ id: 'dashboard.menu.assets', defaultMessage: 'Asset Files' }),
+      icon: File,
+      description: intl.formatMessage({ id: 'dashboard.menu.assets.desc', defaultMessage: 'Upload and manage asset files' })
+    },
+    {
+      id: 'send',
+      label: intl.formatMessage({ id: 'dashboard.menu.send', defaultMessage: 'Send Messages' }),
+      icon: Send,
+      description: intl.formatMessage({ id: 'dashboard.menu.send.desc', defaultMessage: 'Configure and send messages' })
+    },
+    {
+      id: 'history',
+      label: intl.formatMessage({ id: 'dashboard.menu.history', defaultMessage: 'History' }),
+      icon: Clock,
+      description: intl.formatMessage({ id: 'dashboard.menu.history.desc', defaultMessage: 'View activity history' })
+    },
+    {
+      id: 'settings',
+      label: intl.formatMessage({ id: 'dashboard.menu.settings', defaultMessage: 'Settings' }),
+      icon: Settings,
+      description: intl.formatMessage({ id: 'dashboard.menu.settings.desc', defaultMessage: 'App settings' })
+    }
   ];
 
   return (
@@ -295,7 +336,9 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <Send className="w-5 h-5 text-white" />
           </div>
-          <span className="font-bold text-lg">Xender-In</span>
+          <span className="font-bold text-lg">
+            <FormattedMessage id="common.app.name" defaultMessage="Xender-In" />
+          </span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}>
           {sidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -313,17 +356,21 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <Send className="w-5 h-5 text-white" />
               </div>
-              <span className="font-bold text-xl">Xender-In</span>
+              <span className="font-bold text-xl">
+                <FormattedMessage id="common.app.name" defaultMessage="Xender-In" />
+              </span>
             </div>
 
             <div className="flex-1 overflow-y-auto py-4">
               <nav className="px-4 space-y-2">
                 <Button variant="secondary" className="w-full justify-start gap-3 bg-primary/10 text-primary hover:bg-primary/20">
                   <BarChart3 className="h-4 w-4" />
-                  Dashboard
+                  <FormattedMessage id="dashboard.menu.dashboard" defaultMessage="Dashboard" />
                 </Button>
                 <div className="pt-4 pb-2">
-                  <p className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Management</p>
+                  <p className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <FormattedMessage id="dashboard.sidebar.management" defaultMessage="Management" />
+                  </p>
                 </div>
                 {menuItems.map((item) => (
                   <Button key={item.id} variant="ghost" className="w-full justify-start gap-3" onClick={() => handleMenuClick(item.id)}>
@@ -344,7 +391,7 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
                   <div className="flex items-center gap-1.5">
                     <Button variant="outline" className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={onLogout}>
                       <LogOut className="h-4 w-4" />
-                      Logout
+                      <FormattedMessage id="common.button.logout" defaultMessage="Logout" />
                     </Button>
                   </div>
                 </div>
@@ -363,17 +410,23 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
           <div className="max-w-7xl mx-auto p-4 lg:p-8 space-y-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 className="text-2xl font-bold tracking-tight">Dashboard Overview</h1>
-                <p className="text-muted-foreground">Welcome back! Here's what's happening with your campaigns.</p>
+                <h1 className="text-2xl font-bold tracking-tight">
+                  <FormattedMessage id="dashboard.overview.title" defaultMessage="Dashboard Overview" />
+                </h1>
+                <p className="text-muted-foreground">
+                  <FormattedMessage id="dashboard.overview.subtitle" defaultMessage="Welcome back! Here's what's happening with your campaigns." />
+                </p>
               </div>
             </div>
 
-            {/* Stats G rid */}
+            {/* Stats Grid */}
             <Stagger>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Contacts</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <FormattedMessage id="dashboard.stats.contacts" defaultMessage="Total Contacts" />
+                    </CardTitle>
                     <Users className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
@@ -382,12 +435,16 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
                     ) : (
                       <div className="text-2xl font-bold">{stats.totalContacts}</div>
                     )}
-                    <p className="text-xs text-muted-foreground">Active contacts</p>
+                    <p className="text-xs text-muted-foreground">
+                      <FormattedMessage id="dashboard.stats.active_contacts" defaultMessage="Active contacts" />
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Templates</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <FormattedMessage id="dashboard.stats.templates" defaultMessage="Templates" />
+                    </CardTitle>
                     <MessageSquare className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
@@ -396,12 +453,16 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
                     ) : (
                       <div className="text-2xl font-bold">{stats.totalTemplates}</div>
                     )}
-                    <p className="text-xs text-muted-foreground">Active templates</p>
+                    <p className="text-xs text-muted-foreground">
+                      <FormattedMessage id="dashboard.stats.active_templates" defaultMessage="Active templates" />
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Messages Sent</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <FormattedMessage id="dashboard.stats.messages" defaultMessage="Messages Sent" />
+                    </CardTitle>
                     <Send className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
@@ -410,12 +471,16 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
                     ) : (
                       <div className="text-2xl font-bold">{stats.messagesSent}</div>
                     )}
-                    <p className="text-xs text-muted-foreground">This month</p>
+                    <p className="text-xs text-muted-foreground">
+                      <FormattedMessage id="dashboard.stats.this_month" defaultMessage="This month" />
+                    </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Quota Usage</CardTitle>
+                    <CardTitle className="text-sm font-medium">
+                      <FormattedMessage id="dashboard.stats.quota" defaultMessage="Quota Usage" />
+                    </CardTitle>
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
@@ -436,8 +501,12 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
               {/* Recent Activity */}
               <Card className="col-span-4">
                 <CardHeader>
-                  <CardTitle>Recent Activity</CardTitle>
-                  <CardDescription>Your latest campaign and message activities</CardDescription>
+                  <CardTitle>
+                    <FormattedMessage id="dashboard.activity.title" defaultMessage="Recent Activity" />
+                  </CardTitle>
+                  <CardDescription>
+                    <FormattedMessage id="dashboard.activity.subtitle" defaultMessage="Your latest campaign and message activities" />
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-8">
@@ -474,9 +543,13 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
                           </div>
                           <div className="ml-auto font-medium">
                             {activity.status === 'success' ? (
-                              <Badge variant="default" className="bg-green-500 hover:bg-green-600">Success</Badge>
+                              <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+                                <FormattedMessage id="common.status.success" defaultMessage="Success" />
+                              </Badge>
                             ) : (
-                              <Badge variant="secondary">Pending</Badge>
+                              <Badge variant="secondary">
+                                <FormattedMessage id="common.status.pending" defaultMessage="Pending" />
+                              </Badge>
                             )}
                           </div>
                         </div>
@@ -489,8 +562,12 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
               {/* Quick Actions */}
               <Card className="col-span-3">
                 <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                  <CardDescription>Common tasks and shortcuts</CardDescription>
+                  <CardTitle>
+                    <FormattedMessage id="dashboard.quick_actions.title" defaultMessage="Quick Actions" />
+                  </CardTitle>
+                  <CardDescription>
+                    <FormattedMessage id="dashboard.quick_actions.subtitle" defaultMessage="Common tasks and shortcuts" />
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4">
                   {menuItems.slice(0, 4).map((item) => (
