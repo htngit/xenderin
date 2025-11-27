@@ -744,7 +744,9 @@ const getFormattedMessage = (template: Template, contact: Contact) => {
 
 #### **11.8 Contacts Page Analytics Integration**
 
-The unsubscribe feature also requires analytics capabilities on the Contacts page. The current analytics cards (Total Contacts, Groups, Average Group Size) should be updated to include unsubscribe metrics:
+The unsubscribe feature also requires analytics capabilities on the Contacts page. The current analytics cards (Total Contacts, Groups, Average Group Size) should be updated to include unsubscribe metrics. **This UI update is part of the future development and will be implemented together with the unsubscribe feature.**
+
+Currently, the Contacts page shows: Total Contacts, Groups, and Average Group Size. In the future, this will be updated to: Total Contacts, Groups, and Unsubscribed (replacing Average Group Size).
 
 ```tsx
 // Update ContactsPage.tsx analytics cards
@@ -857,9 +859,11 @@ To ensure the current codebase supports this future feature, the following prepa
 3. **Contact Filtering**: Design the contact retrieval system to support filtering based on various criteria
 4. **Event System**: Ensure the IPC and event system can handle future message reception events
 5. **Database Schema**: Plan for future schema migrations to include unsubscribe table
-6. **Analytics Preparation**: Prepare Contacts page to support additional analytics cards
+6. **Analytics Preparation**: Prepare Contacts page structure to support future unsubscribe analytics card (will replace Average Group Size card)
 7. **Contact Status Tracking**: Modify ContactService to support status-based filtering (active vs unsubscribed)
 
 This comprehensive approach ensures that the unsubscribe feature is fully integrated across the application, from message reception and processing to analytics and reporting, while maintaining the local-first architecture principles and enhancing user experience.
+
+**Note**: The analytics UI updates (Unsubscribed card on Contacts page) are specifically designated as Future Development and will be implemented together with the complete unsubscribe feature, not as part of the initial WhatsApp runtime implementation.
 
 This implementation plan provides a complete roadmap to integrate WhatsApp runtime capabilities while maintaining the local-first architecture principles and ensuring robust error handling, real-time progress updates, and proper quota management.
