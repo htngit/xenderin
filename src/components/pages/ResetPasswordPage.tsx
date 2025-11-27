@@ -7,13 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BubbleBackground } from '@/components/ui/bubble';
-import { AuthService } from '@/lib/services';
+import { AuthService, serviceManager } from '@/lib/services';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Eye, 
-  EyeOff, 
-  Lock, 
-  CheckCircle, 
+import {
+  Eye,
+  EyeOff,
+  Lock,
+  CheckCircle,
   AlertCircle,
   Loader2,
   KeyRound,
@@ -26,7 +26,7 @@ export function ResetPasswordPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const authService = useMemo(() => new AuthService(), []);
+  const authService = useMemo(() => serviceManager.getAuthService(), []);
 
   const [currentView, setCurrentView] = useState<ViewType>('reset-form');
   const [password, setPassword] = useState('');

@@ -1,7 +1,14 @@
 import { User, AuthResponse } from './types';
 import { supabase, rpcHelpers, authHelpers, handleDatabaseError } from '../supabase';
+import { db } from '../db';
+import { SyncManager } from '../sync/SyncManager';
 
 export class AuthService {
+  private syncManager: SyncManager | null = null;
+
+  constructor(syncManager?: SyncManager) {
+    this.syncManager = syncManager || null;
+  }
   // Login with Supabase authentication
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
@@ -197,9 +204,16 @@ export class AuthService {
     }
   }
 
-  // Logout from Supabase 
+  // Logout from Supabase
   async logout(): Promise<void> {
     try {
+      // Get current user ID before logging out to clear user data
+      const currentUser = await this.getCurrentUser();
+      if (currentUser?.master_user_id) {
+        // Clear user data from local storage before signing out
+        await db.clearUserData(currentUser.master_user_id);
+      }
+
       // Online mode: perform full logout with Supabase
       await authHelpers.signOut();
     } catch (error) {

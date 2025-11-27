@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BubbleBackground } from '@/components/ui/bubble';
-import { AuthService, AuthResponse } from '@/lib/services';
+import { AuthService, AuthResponse, serviceManager } from '@/lib/services';
 import { useToast } from '@/hooks/use-toast';
 import {
   Eye,
@@ -43,6 +43,7 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
 
   const { toast } = useToast();
   const intl = useIntl();
+  // Create AuthService directly - LoginPage loads before serviceManager initialization
   const authService = useMemo(() => new AuthService(), []);
 
   const resetForm = () => {

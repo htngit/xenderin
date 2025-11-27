@@ -69,8 +69,15 @@ export const paymentService = {
   }
 };
 
+import { SyncManager } from '../sync/SyncManager';
+
 // Class-based service for backward compatibility with Dashboard
 export class PaymentService {
+  private syncManager: SyncManager | null = null;
+
+  constructor(syncManager?: SyncManager) {
+    this.syncManager = syncManager || null;
+  }
   async createPayment(planType: string, amount: number, userId: string) {
     const { data, error } = await supabase.functions.invoke('create-payment', {
       body: {

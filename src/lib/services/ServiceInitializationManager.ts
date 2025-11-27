@@ -4,6 +4,9 @@ import { GroupService } from './GroupService';
 import { HistoryService } from './HistoryService';
 import { TemplateService } from './TemplateService';
 import { QuotaService } from './QuotaService';
+import { AuthService } from './AuthService';
+import { PaymentService } from './PaymentService';
+import { SyncManager } from '../sync/SyncManager';
 
 /**
  * A singleton manager responsible for initializing, storing, and providing
@@ -23,6 +26,9 @@ export class ServiceInitializationManager {
   private assetService: AssetService | null = null;
   private historyService: HistoryService | null = null;
   private quotaService: QuotaService | null = null;
+  private authService: AuthService | null = null;
+  private paymentService: PaymentService | null = null;
+  private syncManager: SyncManager | null = null;
 
   // Async lock to prevent concurrent initialization
   private isInitializing: boolean = false;
@@ -43,7 +49,16 @@ export class ServiceInitializationManager {
    * Check if services have been fully initialized
    */
   public isInitialized(): boolean {
-    return this.initializedServices.size === 6 && !this.isInitializing;
+    return this.initializedServices.size === 8 &&
+           this.templateService !== null &&
+           this.contactService !== null &&
+           this.groupService !== null &&
+           this.assetService !== null &&
+           this.historyService !== null &&
+           this.quotaService !== null &&
+           this.authService !== null &&
+           this.paymentService !== null &&
+           !this.isInitializing;
   }
 
   private _isDashboardInitialized: boolean = false;
@@ -82,13 +97,33 @@ export class ServiceInitializationManager {
 
     this.initializationPromise = (async () => {
       try {
+        // Initialize SyncManager first
+        this.syncManager = new SyncManager();
+
         // Initialize in dependency order
+        console.log('Initializing AuthService...');
+        await this.initializeService('auth', () => this.initializeAuthService(masterUserId));
+
+        console.log('Initializing TemplateService...');
         await this.initializeService('template', () => this.initializeTemplateService(masterUserId));
+
+        console.log('Initializing ContactService...');
         await this.initializeService('contact', () => this.initializeContactService(masterUserId));
+
+        console.log('Initializing GroupService...');
         await this.initializeService('group', () => this.initializeGroupService(masterUserId));
+
+        console.log('Initializing AssetService...');
         await this.initializeService('asset', () => this.initializeAssetService(masterUserId));
+
+        console.log('Initializing HistoryService...');
         await this.initializeService('history', () => this.initializeHistoryService(masterUserId));
+
+        console.log('Initializing QuotaService...');
         await this.initializeService('quota', () => this.initializeQuotaService(masterUserId));
+
+        console.log('Initializing PaymentService...');
+        await this.initializeService('payment', () => this.initializePaymentService(masterUserId));
 
         console.log('All services initialized successfully');
       } catch (error) {
@@ -146,6 +181,20 @@ export class ServiceInitializationManager {
     return this.quotaService;
   }
 
+  public getAuthService(): AuthService {
+    if (!this.authService) {
+      throw new Error('AuthService not initialized. Call initializeAllServices first.');
+    }
+    return this.authService;
+  }
+
+  public getPaymentService(): PaymentService {
+    if (!this.paymentService) {
+      throw new Error('PaymentService not initialized. Call initializeAllServices first.');
+    }
+    return this.paymentService;
+  }
+
   // --- Private Initializers ---
 
   private async initializeService(name: string, initFn: () => Promise<void>): Promise<void> {
@@ -162,33 +211,63 @@ export class ServiceInitializationManager {
   }
 
   private async initializeTemplateService(masterUserId: string): Promise<void> {
-    this.templateService = new TemplateService();
+    if (!this.syncManager) {
+      throw new Error('SyncManager not initialized');
+    }
+    this.templateService = new TemplateService(this.syncManager);
     await this.templateService.initialize(masterUserId);
   }
 
   private async initializeContactService(masterUserId: string): Promise<void> {
-    this.contactService = new ContactService();
+    if (!this.syncManager) {
+      throw new Error('SyncManager not initialized');
+    }
+    this.contactService = new ContactService(this.syncManager);
     await this.contactService.initialize(masterUserId);
   }
 
   private async initializeGroupService(masterUserId: string): Promise<void> {
-    this.groupService = new GroupService();
+    if (!this.syncManager) {
+      throw new Error('SyncManager not initialized');
+    }
+    this.groupService = new GroupService(this.syncManager);
     await this.groupService.initialize(masterUserId);
   }
 
   private async initializeAssetService(masterUserId: string): Promise<void> {
-    this.assetService = new AssetService();
+    if (!this.syncManager) {
+      throw new Error('SyncManager not initialized');
+    }
+    this.assetService = new AssetService(this.syncManager);
     await this.assetService.initialize(masterUserId);
   }
 
   private async initializeHistoryService(masterUserId: string): Promise<void> {
-    this.historyService = new HistoryService();
+    if (!this.syncManager) {
+      throw new Error('SyncManager not initialized');
+    }
+    this.historyService = new HistoryService(this.syncManager);
     await this.historyService.initialize(masterUserId);
   }
 
+  private async initializeAuthService(_masterUserId: string): Promise<void> {
+    // AuthService may not need a sync manager, instantiate directly
+    this.authService = new AuthService();
+    // AuthService doesn't have an initialize method, it's ready to use
+  }
+
   private async initializeQuotaService(_masterUserId: string): Promise<void> {
-    this.quotaService = new QuotaService();
+    if (!this.syncManager) {
+      throw new Error('SyncManager not initialized');
+    }
+    this.quotaService = new QuotaService(this.syncManager);
     // QuotaService doesn't have an initialize method, it's ready to use
+  }
+
+  private async initializePaymentService(_masterUserId: string): Promise<void> {
+    // PaymentService may not need a sync manager, instantiate directly
+    this.paymentService = new PaymentService();
+    // PaymentService doesn't have an initialize method, it's ready to use
   }
 }
 

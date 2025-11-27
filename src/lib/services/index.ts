@@ -15,3 +15,4 @@ export * from './types';
 export { PaymentService, paymentService } from './PaymentService';
 export { subscriptionService } from './SubscriptionService';
 export { billingService } from './BillingService';
+export { serviceManager } from './ServiceInitializationManager';

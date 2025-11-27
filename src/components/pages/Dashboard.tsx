@@ -5,10 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Stagger } from '@/components/ui/animations';
-import { QuotaService, AuthService, PaymentService } from '@/lib/services';
 import { Quota } from '@/lib/services/types';
 import { useUser } from '@/lib/security/UserProvider';
-import { serviceManager } from '@/lib/services/ServiceInitializationManager';
+import { useServices } from '@/lib/services/ServiceContext';
+import { serviceManager } from '@/lib/services';
 import { FirstTimeUserService } from '@/lib/services/FirstTimeUserService';
 import { InitialSyncOrchestrator, SyncProgress } from '@/lib/services/InitialSyncOrchestrator';
 import { InitialSyncScreen } from '../ui/InitialSyncScreen';
@@ -73,10 +73,8 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
   // Guard against double init
   const initializedRef = useRef(false);
 
-  // Services instances - Memoized using useRef to prevent re-instantiation
-  const authService = useRef(new AuthService()).current;
-  const quotaService = useRef(new QuotaService()).current;
-  const paymentService = useRef(new PaymentService()).current;
+  // Get services from context
+  const { authService, quotaService, paymentService } = useServices();
 
   // ---------------------------------------------------------------------
   // Initialization logic (runs once when user info is ready)

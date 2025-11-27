@@ -2,6 +2,7 @@
 import { supabase, rpcHelpers, handleDatabaseError } from '@/lib/supabase';
 import { Quota, QuotaReservation, QuotaStatus } from './types';
 import { db, LocalQuota, LocalQuotaReservation } from '@/lib/db';
+import { SyncManager } from '../sync/SyncManager';
 import { userContextManager } from '../security/UserContextManager';
 import {
   toISOString,
@@ -11,6 +12,140 @@ import {
 } from '../utils/timestamp';
 
 export class QuotaService {
+  private syncManager: SyncManager;
+
+
+  constructor(syncManager?: SyncManager) {
+    this.syncManager = syncManager || new SyncManager();
+    this.setupSyncEventListeners();
+  }
+
+  /**
+   * Setup event listeners for sync events
+   */
+  private setupSyncEventListeners() {
+    this.syncManager.addEventListener((event) => {
+      if (event.table === 'quotas' || event.table === 'quotaReservations') {
+        switch (event.type) {
+          case 'sync_complete':
+            console.log('Quota sync completed');
+            break;
+          case 'sync_error':
+            console.error('Quota sync error:', event.error);
+            break;
+          case 'conflict_detected':
+            console.warn('Quota conflict detected:', event.message);
+            break;
+        }
+      }
+    });
+  }
+
+  /**
+   * Set the current master user ID and configure sync
+   */
+  async initialize(masterUserId: string) {
+
+    this.syncManager.setMasterUserId(masterUserId);
+
+    // Start auto sync
+    this.syncManager.startAutoSync();
+
+    // Initial sync with error handling
+    try {
+      await this.syncManager.triggerSync();
+    } catch (error) {
+      console.warn('Initial sync failed, will retry later:', error);
+    }
+  }
+
+  /**
+   * Reserve quota - ALWAYS ONLINE (Supabase RPC)
+   * Required by Architecture: "RPC = single source of truth untuk quota"
+   */
+  async reserveQuota(userId: string, messageCount: number) {
+    // Check online
+    const isOnline = this.syncManager.getIsOnline();
+    if (!isOnline) {
+      throw new Error('Internet connection required to reserve quota');
+    }
+
+    // Call Supabase RPC
+    const result = await this.onlineReserveQuota(userId, messageCount);
+
+    if (!result.success) {
+      throw new Error(result.error_message || 'Failed to reserve quota');
+    }
+
+    // Cache reservation
+    try {
+      const masterUserId = await userContextManager.getCurrentUserId();
+      if (masterUserId) {
+        await db.quotaReservations.add({
+          id: result.reservation_id,
+          user_id: userId,
+          master_user_id: masterUserId,
+          amount: messageCount,
+          status: 'pending',
+          created_at: nowISO(),
+          updated_at: nowISO(),
+          _syncStatus: 'synced',
+          _lastModified: nowISO(),
+          _version: 1
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to cache reservation locally:', e);
+      // Non-blocking, continue
+    }
+
+    return result;
+  }
+
+  /**
+   * Commit quota - ONLINE FIRST, LOCAL FALLBACK
+   * Architecture: "Commit → update quota + logs"
+   */
+  async commitQuota(reservationId: string, successCount: number) {
+    try {
+      // Try Supabase RPC first
+      await this.onlineCommitQuota(reservationId, successCount);
+
+      // Update local cache
+      await db.quotaReservations.update(reservationId, {
+        status: 'committed',
+        committed_at: nowISO(),
+        _syncStatus: 'synced',
+        updated_at: nowISO()
+      });
+
+    } catch (error) {
+      console.warn('[QuotaService] Online commit failed, using fallback');
+
+      // Fallback to local
+      await db.quotaReservations.update(reservationId, {
+        status: 'committed',
+        committed_at: nowISO(),
+        _syncStatus: 'pending', // Will sync later
+        updated_at: nowISO()
+      });
+
+      // Queue for sync
+      await db.syncQueue.add({
+        table: 'quotas',
+        operation: 'update',
+        recordId: reservationId,
+        data: {
+          action: 'commit_quota',
+          reservation_id: reservationId,
+          success_count: successCount
+        },
+        timestamp: nowISO(),
+        retryCount: 0,
+        status: 'pending'
+      });
+    }
+  }
   /**
    * Get quota information for a user using RPC function
    * Enforces data isolation using UserContextManager
@@ -23,7 +158,7 @@ export class QuotaService {
       }
 
       // Check online status and prioritize accordingly
-      const isOnline = await this.checkOnlineStatus();
+      const isOnline = this.syncManager.getIsOnline();
 
       if (isOnline) {
         try {
@@ -107,27 +242,6 @@ export class QuotaService {
     }
   }
 
-  /**
-   * Check online status with timeout and fallback
-   */
-  private async checkOnlineStatus(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-
-      const response = await fetch('/api/ping', {
-        method: 'HEAD',
-        cache: 'no-cache',
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      console.log('Network check failed, assuming offline mode:', error);
-      return false;
-    }
-  }
 
   /**
    * Subscribe to real-time quota updates using Supabase realtime
@@ -509,17 +623,6 @@ export class QuotaService {
   // LOCAL RPC EQUIVALENTS FOR OFFLINE QUOTA MANAGEMENT
   // ============================================================================
 
-  /**
-   * Check if we're currently online (have internet connection)
-   */
-  private async isOnline(): Promise<boolean> {
-    try {
-      const response = await fetch('/api/ping', { method: 'HEAD', cache: 'no-cache' });
-      return response.ok;
-    } catch (error) {
-      return false;
-    }
-  }
 
   /**
    * Local equivalent of reserve_quota RPC function
@@ -769,6 +872,38 @@ export class QuotaService {
   }
 
   /**
+   * Local equivalent of cancel_quota_reservation RPC function
+   * Cancels a quota reservation in local IndexedDB
+   */
+  async localCancelReservation(reservationId: string): Promise<void> {
+    try {
+      if (!reservationId) {
+        throw new Error('Reservation ID is required');
+      }
+
+      const reservation = await db.quotaReservations.get(reservationId);
+      if (!reservation) {
+        throw new Error('Reservation not found');
+      }
+
+      if (reservation.status !== 'pending') {
+        throw new Error(`Cannot cancel reservation with status: ${reservation.status}`);
+      }
+
+      await db.quotaReservations.update(reservationId, {
+        status: 'cancelled',
+        updated_at: nowISO(),
+        _syncStatus: 'pending'
+      });
+
+      console.log(`Local quota reservation ${reservationId} cancelled successfully`);
+    } catch (error) {
+      console.error('Error in localCancelReservation:', error);
+      throw new Error(`Failed to cancel local reservation: ${handleDatabaseError(error)}`);
+    }
+  }
+
+  /**
    * Clean up expired reservations
    */
   async cleanupExpiredReservations(): Promise<void> {
@@ -788,107 +923,11 @@ export class QuotaService {
     }
   }
 
-  /**
-   * Enhanced reserveQuota method with offline support
-   */
-  async reserveQuota(userId: string, messageCount: number = 1): Promise<{
-    success: boolean;
-    reservation_id: string;
-    error_message?: string;
-    is_local?: boolean;
-  }> {
-    try {
-      // Check if we're online first
-      const online = await this.isOnline();
 
-      if (online) {
-        // Try online first (original implementation)
-        const onlineResult = await this.onlineReserveQuota(userId, messageCount);
-        return { ...onlineResult, is_local: false };
-      } else {
-        // Fall back to local reservation
-        const reservation = await this.localReserveQuota(userId, messageCount);
-        return {
-          success: true,
-          reservation_id: reservation.id,
-          error_message: undefined,
-          is_local: true
-        };
-      }
-    } catch (error) {
-      console.error('Error in enhanced reserveQuota:', error);
 
-      // If online fails, try local as fallback
-      try {
-        const reservation = await this.localReserveQuota(userId, messageCount);
-        return {
-          success: true,
-          reservation_id: reservation.id,
-          error_message: `Using local quota (offline mode): ${error instanceof Error ? error.message : String(error)}`,
-          is_local: true
-        };
-      } catch (localError) {
-        return {
-          success: false,
-          reservation_id: '',
-          error_message: `Both online and local quota reservation failed: ${handleDatabaseError(localError)}`,
-          is_local: false
-        };
-      }
-    }
-  }
+
 
   /**
-   * Enhanced commitQuota method with offline support
+   * Cancel reservation with the new interface
    */
-  async commitQuota(reservationId: string, successCount: number = 1): Promise<{
-    success: boolean;
-    error_message?: string;
-    is_local?: boolean;
-  }> {
-    try {
-      // Check if we're online and if reservation exists online
-      const online = await this.isOnline();
-
-      if (online && !reservationId.startsWith('local_reservation_')) {
-        // Try online first (original implementation)
-        await this.onlineCommitQuota(reservationId, successCount);
-        return { success: true, is_local: false };
-      } else {
-        // Use local commit
-        await this.localCommitReservation(reservationId);
-        return {
-          success: true,
-          error_message: online ? undefined : 'Using local quota commit (offline mode)',
-          is_local: true
-        };
-      }
-    } catch (error) {
-      console.error('Error in enhanced commitQuota:', error);
-
-      // If online fails, try local as fallback for local reservations
-      if (reservationId.startsWith('local_reservation_')) {
-        try {
-          await this.localCommitReservation(reservationId);
-          return {
-            success: true,
-            error_message: `Using local quota commit (fallback): ${error instanceof Error ? error.message : String(error)}`,
-            is_local: true
-          };
-        } catch (localError) {
-          return {
-            success: false,
-            error_message: `Failed to commit local reservation: ${handleDatabaseError(localError)}`,
-            is_local: true
-          };
-        }
-      }
-
-      return {
-        success: false,
-        error_message: `Failed to commit quota: ${handleDatabaseError(error)}`,
-        is_local: false
-      };
-    }
-  }
 }

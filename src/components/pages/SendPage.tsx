@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useServices } from '@/lib/services/ServiceContext';
 import { handleServiceError } from '@/lib/utils/errorHandling';
 import { userContextManager } from '@/lib/security/UserContextManager';
+import { db } from '@/lib/db';
 import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { ErrorScreen } from '@/components/ui/ErrorScreen';
 import { Label } from '@/components/ui/label';
@@ -747,7 +748,31 @@ export function SendPage({ userName }: { userName: string }) {
         throw new Error('Failed to reserve quota');
       }
 
-      // Step 2: Simulate sending process
+      // Step 2: Create job in WAL (Architecture: "Persist to Dexie WAL")
+      const jobId = crypto.randomUUID();
+      await db.messageJobs.add({
+        id: jobId,
+        reservation_id: reserveResult.reservation_id,
+        user_id: currentUserId,
+        master_user_id: currentUserId,
+        contact_group_id: selectedGroupId === 'all' ? undefined : selectedGroupId,
+        template_id: selectedTemplate,
+        total_contacts: targetContacts.length,
+        success_count: 0,
+        failed_count: 0,
+        status: 'pending',
+        config: {
+          sendingMode,
+          delayRange
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        _syncStatus: 'pending',
+        _lastModified: new Date().toISOString(),
+        _version: 1
+      });
+
+      // Step 3: Simulate sending process
       // BACKEND IMPLEMENTATION NOTE:
       // When implementing the actual sending logic in the backend (WhatsApp Web JS):
       //
@@ -775,7 +800,16 @@ export function SendPage({ userName }: { userName: string }) {
       // Step 4: Commit quota usage
       await quotaService.commitQuota(reserveResult.reservation_id, successCount);
 
-      // Step 5: Create Activity Log with Message Logs
+      // Step 5: Update job status
+      await db.messageJobs.update(jobId, {
+        status: 'completed',
+        success_count: successCount,
+        failed_count: failedCount,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+      // Step 6: Create Activity Log with Message Logs
       const messageLogs: MessageLog[] = targetContacts.map((contact, index) => {
         const isSuccess = index < successCount;
         return {

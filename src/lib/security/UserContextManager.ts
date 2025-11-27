@@ -617,6 +617,43 @@ class UserContextManager {
   }
 
   /**
+   * Get the last user ID from localStorage
+   */
+  getLastUserId(): string | null {
+    try {
+      return localStorage.getItem('last_user_id');
+    } catch (error) {
+      console.error('Error getting last user ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Set the last user ID in localStorage
+   */
+  setLastUserId(userId: string): void {
+    try {
+      localStorage.setItem('last_user_id', userId);
+    } catch (error) {
+      console.error('Error setting last user ID:', error);
+    }
+  }
+
+  /**
+   * Check if the current user is different from the last user
+   */
+  hasUserChanged(currentUserId?: string): boolean {
+    const actualUserId = currentUserId || this.currentUser?.id;
+    const lastUserId = this.getLastUserId();
+
+    if (!actualUserId || !lastUserId) {
+      return false; // Can't determine if user has changed
+    }
+
+    return actualUserId !== lastUserId;
+  }
+
+  /**
    * Utility: Validate UUID format
    */
   private isValidUUID(value: string): boolean {

@@ -5,6 +5,7 @@
  */
 
 import { Contact, ContactGroup, Template, ActivityLog, AssetFile, Quota } from '../services/types';
+import { LocalProfile, LocalQuotaReservation } from '../db';
 
 /**
  * Type guard for validating UUID format
@@ -358,9 +359,83 @@ export function validateQuota(data: any): Quota | null {
 }
 
 /**
+ * Validate profile data with comprehensive type checking
+ */
+export function validateProfile(data: any): LocalProfile | null {
+  if (!isValidJSONObject(data)) {
+    console.error('Profile data is not a valid object:', data);
+    return null;
+  }
+
+  try {
+    const validRoles = ['owner', 'staff'] as const;
+    const role = validRoles.includes(data.role) ? data.role : 'owner';
+
+    const validated: LocalProfile = {
+      id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
+      email: isValidEmail(data.email) ? data.email : '',
+      name: sanitizeString(data.name, 'name', 255),
+      role,
+      master_user_id: isValidUUID(data.master_user_id) ? data.master_user_id : '',
+      phone_number: data.phone_number ? sanitizeString(data.phone_number, 'phone_number', 20) : undefined,
+      avatar_url: data.avatar_url ? sanitizeString(data.avatar_url, 'avatar_url', 1000) : undefined,
+      is_active: sanitizeBoolean(data.is_active, 'is_active'),
+      created_at: String(data.created_at),
+      updated_at: String(data.updated_at),
+      _syncStatus: data._syncStatus === 'pending' || data._syncStatus === 'synced' || data._syncStatus === 'conflict' || data._syncStatus === 'error' ? data._syncStatus : 'pending',
+      _lastModified: String(data._lastModified),
+      _version: sanitizeNumber(data._version, '_version', 0),
+      _deleted: sanitizeBoolean(data._deleted, '_deleted')
+    };
+
+    return validated;
+  } catch (error) {
+    console.error('Error validating profile data:', error, data);
+    return null;
+  }
+}
+
+/**
+ * Validate quota reservation data with comprehensive type checking
+ */
+export function validateQuotaReservation(data: any): LocalQuotaReservation | null {
+  if (!isValidJSONObject(data)) {
+    console.error('Quota reservation data is not a valid object:', data);
+    return null;
+  }
+
+  try {
+    const validStatuses = ['pending', 'committed', 'cancelled', 'expired'] as const;
+    const status = validStatuses.includes(data.status) ? data.status : 'pending';
+
+    const validated: LocalQuotaReservation = {
+      id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
+      user_id: isValidUUID(data.user_id) ? data.user_id : '',
+      master_user_id: isValidUUID(data.master_user_id) ? data.master_user_id : '',
+      quota_id: data.quota_id && isValidUUID(data.quota_id) ? data.quota_id : undefined,
+      amount: sanitizeNumber(data.amount, 'amount', 0),
+      status,
+      expires_at: data.expires_at ? String(data.expires_at) : undefined,
+      committed_at: data.committed_at ? String(data.committed_at) : undefined,
+      created_at: String(data.created_at),
+      updated_at: String(data.updated_at),
+      _syncStatus: data._syncStatus === 'pending' || data._syncStatus === 'synced' || data._syncStatus === 'conflict' || data._syncStatus === 'error' ? data._syncStatus : 'pending',
+      _lastModified: String(data._lastModified),
+      _version: sanitizeNumber(data._version, '_version', 0),
+      _deleted: sanitizeBoolean(data._deleted, '_deleted')
+    };
+
+    return validated;
+  } catch (error) {
+    console.error('Error validating quota reservation data:', error, data);
+    return null;
+  }
+}
+
+/**
  * Generic data validation function that chooses the appropriate validator
  */
-export function validateData<T>(data: any, type: 'contact' | 'group' | 'template' | 'activityLog' | 'assetFile' | 'quota' | string): T | null {
+export function validateData<T>(data: any, type: 'contact' | 'group' | 'template' | 'activityLog' | 'assetFile' | 'quota' | 'profile' | 'quotaReservation' | string): T | null {
   switch (type) {
     case 'contact':
     case 'contacts':
@@ -380,6 +455,12 @@ export function validateData<T>(data: any, type: 'contact' | 'group' | 'template
     case 'quota':
     case 'quotas':
       return validateQuota(data) as T;
+    case 'profile':
+    case 'profiles':
+      return validateProfile(data) as T;
+    case 'quotaReservation':
+    case 'quotaReservations':
+      return validateQuotaReservation(data) as T;
     default:
       console.error('Unknown data type for validation:', type);
       return null;

@@ -3,6 +3,7 @@ import { User } from '../services/types';
 import { supabase } from '../supabase';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { userContextManager } from './UserContextManager';
+import { db } from '../db';
 
 
 /**
@@ -57,7 +58,7 @@ export function UserProvider({ children }: UserProviderProps) {
 
       // Create a timeout promise
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timed out')), 5000);
+        setTimeout(() => reject(new Error('Request timed out')), 15000);
       });
 
       // Race the supabase query against the timeout
@@ -113,6 +114,45 @@ export function UserProvider({ children }: UserProviderProps) {
       isSigningInRef.current = authUser.id;
       setIsLoading(true);
 
+      // Check if user has changed (different from the last user)
+      const previousUserId = userContextManager.getLastUserId();
+
+      if (previousUserId && previousUserId !== authUser.id) {
+        console.log(`User switch detected: ${previousUserId} -> ${authUser.id}`);
+
+        // Check if user has a stored preference
+        const userPreference = localStorage.getItem('userSwitchPreference');
+        const shouldRememberChoice = localStorage.getItem('userSwitchRememberChoice') === 'true';
+
+        let shouldCleanup = true; // Default to cleanup
+
+        if (shouldRememberChoice && userPreference) {
+          // Use stored preference
+          if (userPreference === 'keep') {
+            shouldCleanup = false;
+          } else if (userPreference === 'always') {
+            shouldCleanup = true;
+          }
+        } else {
+          // For now, we'll default to cleanup since we don't have a way to show the dialog here
+          // The dialog would typically be shown in a component context that has access to React state
+          shouldCleanup = true; // Default to cleanup
+        }
+
+        if (shouldCleanup) {
+          // Clean up old user data if different user
+          try {
+            await db.clearUserData(previousUserId);
+            console.log(`Cleaned up data for previous user: ${previousUserId}`);
+          } catch (cleanupError) {
+            console.error('Error cleaning up previous user data:', cleanupError);
+            // Continue with sign-in even if cleanup fails
+          }
+        } else {
+          console.log(`Keeping data for previous user: ${previousUserId}`);
+        }
+      }
+
       const userProfile = await fetchUserProfile(authUser);
 
       if (userProfile) {
@@ -138,6 +178,9 @@ export function UserProvider({ children }: UserProviderProps) {
           setUser(null);
           setMasterUserId(null);
         }
+
+        // Set this user as the last user now that sign-in is successful
+        userContextManager.setLastUserId(userProfile.id);
       } else {
         // Handle case where profile doesn't exist yet (e.g. new signup)
         // We might want to create a profile here or redirect to a setup page
@@ -168,6 +211,9 @@ export function UserProvider({ children }: UserProviderProps) {
           setUser(null);
           setMasterUserId(null);
         }
+
+        // Set this user as the last user now that sign-in is successful
+        userContextManager.setLastUserId(newUser.id);
       }
     } catch (error) {
       console.error('Error in handleSignIn:', error);

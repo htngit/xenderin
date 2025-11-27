@@ -14,6 +14,8 @@ interface ServiceContextType {
   assetService: AssetService;
   historyService: HistoryService;
   quotaService: QuotaService;
+  authService: AuthService;
+  paymentService: PaymentService;
   isInitialized: boolean;
 }
 
@@ -61,15 +63,34 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  const services: ServiceContextType = {
-    templateService: serviceManager.getTemplateService(),
-    contactService: serviceManager.getContactService(),
-    groupService: serviceManager.getGroupService(),
-    assetService: serviceManager.getAssetService(),
-    historyService: serviceManager.getHistoryService(),
-    quotaService: serviceManager.getQuotaService(),
-    isInitialized: true,
-  };
+  // Safely get services with error handling
+  let services: ServiceContextType | null = null;
+  try {
+    services = {
+      templateService: serviceManager.getTemplateService(),
+      contactService: serviceManager.getContactService(),
+      groupService: serviceManager.getGroupService(),
+      assetService: serviceManager.getAssetService(),
+      historyService: serviceManager.getHistoryService(),
+      quotaService: serviceManager.getQuotaService(),
+      authService: serviceManager.getAuthService(),
+      paymentService: serviceManager.getPaymentService(),
+      isInitialized: true,
+    };
+  } catch (error) {
+    console.error('Error getting services from service manager:', error);
+    // If there's an error getting services, go back to waiting state
+    setIsReady(false);
+    // Return loading state to prevent further execution
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Initializing services...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ServiceContext.Provider value={services}>

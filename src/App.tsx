@@ -18,12 +18,14 @@ import { CampaignHistoryPage } from '@/components/pages/CampaignHistoryPage';
 import { GroupPage } from '@/components/pages/GroupPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
 import { ServiceProvider } from '@/lib/services/ServiceContext';
-import { AuthResponse, PINValidation } from '@/lib/services';
+import { AuthResponse, PINValidation, serviceManager } from '@/lib/services';
 import { AuthService } from '@/lib/services/AuthService';
 import { syncManager } from '@/lib/sync/SyncManager';
 
 import { Toaster } from '@/components/ui/toaster';
 import { UserProvider } from '@/lib/security/UserProvider';
+import { userContextManager } from '@/lib/security/UserContextManager';
+import { db } from '@/lib/db';
 import { IntlProvider } from '@/lib/i18n/IntlProvider';
 
 // Public routes component
@@ -54,14 +56,16 @@ const ProtectedRoutes = ({
 }) => {
   return (
     <Routes>
-      {/* Dashboard initializes services, so it sits outside ServiceProvider */}
+      {/* Dashboard wrapped with ServiceProvider for consistent service access */}
       <Route
         path="/dashboard"
         element={
-          <Dashboard
-            userName={authData?.user.name || 'User'}
-            onLogout={onLogout}
-          />
+          <ServiceProvider>
+            <Dashboard
+              userName={authData?.user.name || 'User'}
+              onLogout={onLogout}
+            />
+          </ServiceProvider>
         }
       />
 
@@ -172,8 +176,20 @@ const MainApp = () => {
   }, []);
 
   const handleLoginSuccess = (data: AuthResponse) => {
+    // Check if the current user is different from the last logged in user
+    const previousUserId = userContextManager.getLastUserId();
+    if (previousUserId && previousUserId !== data.user.id) {
+      // Different user is logging in, clear the old user's data
+      db.clearUserData(previousUserId).catch(error => {
+        console.error('Error clearing old user data:', error);
+      });
+    }
+
     setAuthData(data);
     // Do NOT set PIN data yet. User must enter PIN.
+
+    // Set the current user as the last user
+    userContextManager.setLastUserId(data.user.id);
   };
 
   const handlePINValidated = async (data: PINValidation, accountId: string) => {
@@ -189,18 +205,83 @@ const MainApp = () => {
       setPinData(data);
 
       // 4. Start Sync Manager (Deferred until PIN is validated)
-      if (authData?.user?.master_user_id) {
-        syncManager.setMasterUserId(authData.user.master_user_id);
-      } else {
+      let masterUserId = authData?.user?.master_user_id;
+      if (!masterUserId) {
         // Fallback if authData isn't fully ready, though it should be
         const user = await authService.getCurrentUser();
-        if (user?.master_user_id) {
-          syncManager.setMasterUserId(user.master_user_id);
+        if (user) {
+          masterUserId = user.master_user_id;
         }
+      }
+
+      if (masterUserId) {
+        syncManager.setMasterUserId(masterUserId);
+
+        // 5. Check connection speed and decide sync strategy
+        const { checkConnectionSpeed, getSyncPercentageBySpeed, getSyncStrategyBySpeed } = await import('@/lib/utils/connectionSpeed');
+        const connectionSpeed = await checkConnectionSpeed();
+
+        // Define sync strategy based on connection speed
+        const syncStrategy = getSyncStrategyBySpeed(connectionSpeed);
+        const syncPercentage = getSyncPercentageBySpeed(connectionSpeed);
+
+        console.log(`Connection speed: ${connectionSpeed} Mbps, Strategy: ${syncStrategy}, Percentage: ${syncPercentage * 100}%`);
+
+        // Determine which tables to sync based on strategy
+        const { getTablesByPriority } = await import('@/lib/sync/SyncPriority');
+        const tablesByPriority = getTablesByPriority();
+        let criticalTables = tablesByPriority.critical;
+        let highPriorityTables = tablesByPriority.high;
+        let mediumPriorityTables = tablesByPriority.medium;
+        let lowPriorityTables = tablesByPriority.low;
+
+        // Show sync indicator to user
+        // In a real implementation, you might want to show a progress indicator
+        console.log(`Starting ${syncStrategy} sync...`);
+
+        switch (syncStrategy) {
+          case 'full':
+            // Full sync: sync all tables
+            await syncManager.sync();
+            break;
+
+          case 'partial':
+            // 50% sync: sync critical and high priority tables first
+            const partialTables = [...criticalTables, ...highPriorityTables];
+            await syncManager.partialSync(partialTables, syncPercentage);
+
+            // Background sync: sync remaining tables in background
+            const backgroundTables = [...mediumPriorityTables, ...lowPriorityTables];
+            await syncManager.backgroundSync(backgroundTables);
+            break;
+
+          case 'background':
+            // Start with critical tables only, rest in background
+            const criticalSyncTables = [...criticalTables];
+            await syncManager.partialSync(criticalSyncTables, 1.0); // Full sync for critical
+
+            // Background sync for all other tables
+            const remainingTables = [...highPriorityTables, ...mediumPriorityTables, ...lowPriorityTables];
+            await syncManager.backgroundSync(remainingTables);
+            break;
+
+          default:
+            // Fallback to partial sync
+            const fallbackTables = [...criticalTables, ...highPriorityTables];
+            await syncManager.partialSync(fallbackTables, 0.5);
+            break;
+        }
+
+        console.log('Sync completed based on connection speed');
+
+        // Initialize all services after sync is complete
+        await serviceManager.initializeAllServices(masterUserId);
       }
     } catch (error) {
       console.error("Failed to load account data after PIN:", error);
       // Handle error (maybe show toast)
+      // Still proceed to unlock UI, sync will happen later if needed
+      setPinData(data);
     }
   };
 

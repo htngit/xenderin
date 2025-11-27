@@ -5,8 +5,6 @@ import { SyncManager } from '../sync/SyncManager';
 import { userContextManager } from '../security/UserContextManager';
 import {
   toISOString,
-  fromISOString,
-  supabaseToLocal,
   localToSupabase,
   addSyncMetadata,
   addTimestamps,
@@ -46,6 +44,17 @@ export class GroupService {
   }
 
   /**
+   * Get current user or throw error
+   */
+  private async getCurrentUser() {
+    const user = await userContextManager.getCurrentUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    return user;
+  }
+
+  /**
    * Set the current master user ID and configure sync
    */
   async initialize(masterUserId: string) {
@@ -56,34 +65,12 @@ export class GroupService {
     this.syncManager.startAutoSync();
 
     // Initial sync with error handling
-    try {
-      await this.syncManager.triggerSync();
-    } catch (error) {
+    // Initial sync with error handling (non-blocking)
+    this.syncManager.triggerSync().catch(error => {
       console.warn('Initial sync failed, will retry later:', error);
-    }
+    });
   }
 
-  /**
-   * Check online status with timeout and fallback
-   */
-  private async checkOnlineStatus(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-
-      const response = await fetch('/api/ping', {
-        method: 'HEAD',
-        cache: 'no-cache',
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      console.log('Network check failed, assuming offline mode:', error);
-      return false;
-    }
-  }
 
   /**
    * Background sync groups without blocking the main operation
@@ -134,7 +121,7 @@ export class GroupService {
       const masterUserId = await this.getMasterUserId();
 
       // Check online status and prioritize accordingly
-      const isOnline = await this.checkOnlineStatus();
+      const isOnline = this.syncManager.getIsOnline();
 
       // First, try to get from local database
       let localGroups = await db.groups
@@ -186,7 +173,7 @@ export class GroupService {
       console.error('Error fetching groups:', error);
 
       // Enhanced error handling with offline fallback
-      const isOnline = await this.checkOnlineStatus();
+      const isOnline = this.syncManager.getIsOnline();
       if (!isOnline) {
         // In offline mode, try to return whatever local data we have
         try {

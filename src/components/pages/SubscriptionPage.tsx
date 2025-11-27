@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { PaymentService, AuthService } from '@/lib/services';
+import { serviceManager } from '@/lib/services';
 import { SubscriptionPlan, PaymentSession } from '@/lib/services/types';
 import { Check, CreditCard, AlertCircle } from 'lucide-react';
 
@@ -44,8 +44,8 @@ export const SubscriptionPage: React.FC = () => {
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'completed' | 'failed' | 'expired'>('pending');
 
   const { toast } = useToast();
-  const paymentService = new PaymentService();
-  const authService = new AuthService();
+  const paymentService = serviceManager.getPaymentService();
+  const authService = serviceManager.getAuthService();
   const paymentSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
 
   // Initialize current user data

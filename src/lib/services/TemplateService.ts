@@ -5,8 +5,6 @@ import { SyncManager } from '../sync/SyncManager';
 import { userContextManager } from '../security/UserContextManager';
 import {
   toISOString,
-  fromISOString,
-  supabaseToLocal,
   localToSupabase,
   addSyncMetadata,
   addTimestamps,
@@ -55,34 +53,12 @@ export class TemplateService {
     this.syncManager.startAutoSync();
 
     // Initial sync with error handling
-    try {
-      await this.syncManager.triggerSync();
-    } catch (error) {
+    // Initial sync with error handling (non-blocking)
+    this.syncManager.triggerSync().catch(error => {
       console.warn('Initial sync failed, will retry later:', error);
-    }
+    });
   }
 
-  /**
-   * Check online status with timeout and fallback
-   */
-  private async checkOnlineStatus(): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
-
-      const response = await fetch('/api/ping', {
-        method: 'HEAD',
-        cache: 'no-cache',
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      console.log('Network check failed, assuming offline mode:', error);
-      return false;
-    }
-  }
 
   /**
    * Background sync templates without blocking the main operation
@@ -172,7 +148,7 @@ export class TemplateService {
       const masterUserId = await this.getMasterUserId();
 
       // Check online status and prioritize accordingly
-      const isOnline = await this.checkOnlineStatus();
+      const isOnline = this.syncManager.getIsOnline();
 
       // First, try to get from local database
       let localTemplates = await db.templates
@@ -224,7 +200,7 @@ export class TemplateService {
       console.error('Error fetching templates:', error);
 
       // Enhanced error handling with offline fallback
-      const isOnline = await this.checkOnlineStatus();
+      const isOnline = this.syncManager.getIsOnline();
       if (!isOnline) {
         // In offline mode, try to return whatever local data we have
         try {
@@ -664,32 +640,6 @@ export class TemplateService {
   }
 
   /**
-   * Initialize real-time subscription for template updates
-   */
-  private initializeRealtimeSubscription() {
-    this.realtimeChannel = supabase
-      .channel('templates-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'templates'
-        },
-        (payload) => {
-          console.log('Template update received:', payload);
-          // Transform payload with standardized timestamps
-          if (payload.new) {
-            payload.new = standardizeForService(payload.new, 'template');
-          }
-          if (payload.old) {
-            payload.old = standardizeForService(payload.old, 'template');
-          }
-        }
-      )
-      .subscribe();
-  }
-
   /**
    * Clean up real-time subscription
    */

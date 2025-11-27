@@ -198,6 +198,14 @@ export class SyncManager {
   }
 
   /**
+   * Get current online status
+   * Centralized method for all services to check connectivity
+   */
+  public getIsOnline(): boolean {
+    return this.isOnline;
+  }
+
+  /**
    * Add event listener for sync events
    */
   addEventListener(listener: SyncEventListener) {
@@ -428,7 +436,7 @@ export class SyncManager {
       }
 
       // Clean up compression cache
-      for (const [key, value] of this.compressionCache.entries()) {
+      for (const [key, _value] of this.compressionCache.entries()) {
         // Keep compressed data for 30 minutes
         if (Date.now() - parseInt(key.split('_')[1] || '0') > 30 * 60 * 1000) {
           this.compressionCache.delete(key);
@@ -1053,12 +1061,19 @@ export class SyncManager {
     // Get last sync timestamp for this table
     const lastSync = await this.getLastSyncTime(tableName);
 
+    // Use appropriate timestamp field based on table
+    let timestampField = 'updated_at';
+    if (tableName === 'userSessions') {
+      // user_sessions table uses last_active or created_at instead of updated_at
+      timestampField = 'last_active'; // Prefer last_active for user sessions
+    }
+
     // Fetch updated records from server
     const { data: serverRecords, error } = await supabase
       .from(supabaseTable)
       .select('*')
       .eq('master_user_id', this.masterUserId)
-      .gte('updated_at', lastSync);
+      .gte(timestampField, lastSync);
 
     if (error) throw error;
     if (!serverRecords || serverRecords.length === 0) return;
@@ -1204,7 +1219,7 @@ export class SyncManager {
       contacts: 'contacts',
       groups: 'groups',                    // FIXED: was 'contact_groups'
       templates: 'templates',
-      activityLogs: 'history',
+      activityLogs: 'history',             // Supabase table is 'history', not 'activity_logs'
       assets: 'assets',
       quotas: 'user_quotas',               // FIXED: was 'quotas'
       profiles: 'profiles',
@@ -1288,11 +1303,6 @@ export class SyncManager {
   }
 
   /**
-   * Get current online status
-   */
-  isOnlineStatus(): boolean {
-    return this.isOnline;
-  }
 
   /**
    * Get comprehensive sync statistics and metrics
@@ -1358,6 +1368,369 @@ export class SyncManager {
       compressionRatio: 1.0,
       connectionQuality: this.connectionState.quality
     };
+  }
+
+  /**
+   * Perform partial sync of specified tables with percentage limit
+   */
+  async partialSync(tables: string[], percentage: number = 0.5): Promise<void> {
+    if (!this.isOnline) {
+      this.setStatus(SyncStatus.OFFLINE, 'Cannot sync while offline');
+      return;
+    }
+
+    if (!this.masterUserId) {
+      throw new Error('Master user ID not set');
+    }
+
+    const syncStartTime = Date.now();
+    this.setStatus(SyncStatus.SYNCING, `Starting partial sync for ${tables.length} tables at ${percentage * 100}%`);
+
+    try {
+      this.emit({
+        type: 'sync_start',
+        message: `Partial sync of ${tables.length} tables at ${percentage * 100}%`,
+        total: tables.length
+      });
+
+      let completedTables = 0;
+      for (const tableName of tables) {
+        try {
+          // Calculate record limit based on percentage
+          const recordLimit = percentage >= 1.0 ?
+            undefined :
+            await this.calculateRecordLimit(tableName, percentage);
+
+          await this.pullTableFromServerWithLimit(tableName, recordLimit);
+
+          completedTables++;
+          this.emit({
+            type: 'progress_update',
+            progress: completedTables,
+            total: tables.length,
+            message: `Processed ${completedTables}/${tables.length} tables`
+          });
+        } catch (tableError) {
+          console.error(`Error syncing table ${tableName}:`, tableError);
+          // Continue with other tables instead of stopping the entire sync
+        }
+      }
+
+      const syncDuration = Date.now() - syncStartTime;
+      this.updateSyncMetrics(syncDuration, completedTables);
+
+      this.setStatus(SyncStatus.IDLE, 'Partial sync completed');
+
+      this.emit({
+        type: 'sync_complete',
+        message: `Partial sync completed in ${syncDuration}ms for ${completedTables}/${tables.length} tables`,
+        total: completedTables
+      });
+    } catch (error) {
+      const syncDuration = Date.now() - syncStartTime;
+      console.error(`Partial sync error (duration: ${syncDuration}ms):`, error);
+      this.setStatus(SyncStatus.ERROR, error instanceof Error ? error.message : 'Partial sync failed');
+
+      this.emit({
+        type: 'sync_error',
+        error: error instanceof Error ? error : new Error('Unknown sync error'),
+        message: 'Partial sync failed'
+      });
+    }
+  }
+
+  /**
+   * Calculate record limit for partial sync based on percentage
+   */
+  private async calculateRecordLimit(tableName: string, percentage: number): Promise<number> {
+    // For different tables, we might want to prioritize different records
+    // For example, prioritize recently used contacts or frequently used templates
+    let totalRecords = 0;
+
+    const localTable = db.table(tableName as any);
+    totalRecords = await localTable.count();
+
+    // If there are no records locally, fetch some from the server
+    if (totalRecords === 0) {
+      // Fetch count from server
+      const supabaseTable = this.mapTableName(tableName);
+      const { count, error } = await supabase
+        .from(supabaseTable)
+        .select('id', { count: 'exact', head: true })
+        .eq('master_user_id', this.masterUserId);
+
+      if (error) {
+        console.error(`Error counting records in ${tableName}:`, error);
+        // Default to 100 records if we can't get the count
+        return Math.max(1, Math.floor(100 * percentage));
+      }
+
+      totalRecords = count || 0;
+    }
+
+    const recordLimit = Math.max(1, Math.floor(totalRecords * percentage));
+
+    // For certain tables, we might want to adjust the limit based on importance
+    switch (tableName) {
+      case 'contacts':
+        // Prioritize most recently used contacts
+        return Math.min(recordLimit, 1000); // Cap at 1000 for contacts
+      case 'templates':
+        // Prioritize most used templates
+        return Math.min(recordLimit, 500); // Cap at 500 for templates
+      case 'assets':
+        // Prioritize more recent assets (may be larger files)
+        return Math.min(recordLimit, 100); // Cap at 100 for assets to avoid large downloads
+      default:
+        return Math.min(recordLimit, 500); // General cap
+    }
+  }
+
+  /**
+   * Pull updates for a specific table from server with record limit
+   */
+  private async pullTableFromServerWithLimit(tableName: string, recordLimit?: number): Promise<void> {
+    const supabaseTable = this.mapTableName(tableName);
+    const localTable = db.table(tableName as any);
+
+    // Get last sync timestamp for this table
+    const lastSync = await this.getLastSyncTime(tableName);
+
+    // Use appropriate timestamp field based on table
+    let timestampField = 'updated_at';
+    if (tableName === 'userSessions') {
+      // user_sessions table uses last_active or created_at instead of updated_at
+      timestampField = 'last_active'; // Prefer last_active for user sessions
+    }
+
+    // Fetch updated records from server with optional limit
+    let query = supabase
+      .from(supabaseTable)
+      .select('*')
+      .eq('master_user_id', this.masterUserId)
+      .gte(timestampField, lastSync);
+
+    if (recordLimit) {
+      query = query.limit(recordLimit);
+    }
+
+    const { data: serverRecords, error } = await query;
+
+    if (error) throw error;
+    if (!serverRecords || serverRecords.length === 0) return;
+
+    // Process each server record with enhanced conflict resolution
+    for (const serverRecord of serverRecords) {
+      try {
+        // Ensure server record timestamps are in consistent ISO string format
+        const normalizedServerRecord = this.normalizeServerRecordTimestamps(serverRecord);
+
+        const localRecord = await localTable.get(normalizedServerRecord.id);
+
+        if (!localRecord) {
+          // New record from server - add to local with validation
+          const validatedData = validateData(normalizedServerRecord, tableName as any);
+          if (validatedData) {
+            const localRecord = {
+              ...validatedData,
+              _syncStatus: 'synced' as const,
+              _lastModified: nowISO(),
+              _version: 1,
+              _deleted: false
+            };
+            await localTable.add(localRecord);
+            this.syncMetrics.totalOperations++;
+            this.syncMetrics.successfulOperations++;
+          } else {
+            console.error(`Validation failed for new server record ${normalizedServerRecord.id} in ${tableName}`);
+            this.syncMetrics.failedOperations++;
+          }
+        } else {
+          // Check for conflicts using enhanced resolution
+          const conflictResult = await this.resolveConflict(tableName, normalizedServerRecord.id, localRecord, normalizedServerRecord);
+
+          if (conflictResult.resolved) {
+            // Apply resolved data with normalized timestamps
+            const updatedRecord = {
+              ...this.normalizeServerRecordTimestamps(conflictResult.data),
+              _syncStatus: 'synced' as const,
+              _lastModified: nowISO(),
+              _version: (localRecord._version || 0) + 1,
+              _deleted: false
+            };
+
+            await localTable.update(normalizedServerRecord.id, updatedRecord);
+            this.syncMetrics.totalOperations++;
+            this.syncMetrics.successfulOperations++;
+
+            // Emit user notification for significant conflicts
+            if (conflictResult.userNotification) {
+              this.emit({
+                type: 'user_notification',
+                table: tableName,
+                recordId: normalizedServerRecord.id,
+                message: conflictResult.userNotification,
+                notificationType: 'warning',
+                userMessage: conflictResult.userNotification
+              });
+            }
+
+            // Log audit information
+            console.log(`Conflict resolved: ${conflictResult.auditLog}`);
+          } else {
+            console.error(`Failed to resolve conflict for ${tableName}:${normalizedServerRecord.id}`);
+            this.syncMetrics.failedOperations++;
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing server record ${serverRecord.id} in ${tableName}:`, error);
+        this.syncMetrics.failedOperations++;
+      }
+    }
+
+    // Update last sync time
+    await this.setLastSyncTime(tableName, nowISO());
+  }
+
+  /**
+   * Continue sync in background for remaining records
+   */
+  async backgroundSync(tables: string[]): Promise<void> {
+    if (!this.isOnline) {
+      console.log('Skipping background sync - offline');
+      return;
+    }
+
+    if (!this.masterUserId) {
+      console.log('Skipping background sync - no master user ID');
+      return;
+    }
+
+    console.log(`Starting background sync for ${tables.length} tables`);
+    this.emit({
+      type: 'sync_start',
+      message: `Background sync for ${tables.length} tables`,
+      notificationType: 'info'
+    });
+
+    // Run in background without blocking UI
+    setTimeout(async () => {
+      try {
+        this.setStatus(SyncStatus.SYNCING, 'Background sync in progress');
+
+        let completedTables = 0;
+        for (const tableName of tables) {
+          try {
+            await this.pullRemainingRecords(tableName);
+            completedTables++;
+          } catch (tableError) {
+            console.error(`Error in background sync for table ${tableName}:`, tableError);
+          }
+        }
+
+        this.setStatus(SyncStatus.IDLE, 'Background sync completed');
+        console.log(`Background sync completed for ${completedTables}/${tables.length} tables`);
+
+        this.emit({
+          type: 'sync_complete',
+          message: `Background sync completed for ${completedTables} tables`,
+          notificationType: 'success'
+        });
+      } catch (error) {
+        console.error('Background sync error:', error);
+        this.emit({
+          type: 'sync_error',
+          error: error instanceof Error ? error : new Error('Background sync failed'),
+          message: 'Background sync failed',
+          notificationType: 'error'
+        });
+      }
+    }, 0); // Use setTimeout to yield to main thread
+  }
+
+  /**
+   * Pull remaining records for a table that weren't synced in partial sync
+   */
+  private async pullRemainingRecords(tableName: string): Promise<void> {
+    const supabaseTable = this.mapTableName(tableName);
+    const localTable = db.table(tableName as any);
+
+    // Get last sync timestamp for this table
+    const lastSync = await this.getLastSyncTime(tableName);
+
+    // Use appropriate timestamp field based on table
+    let timestampField = 'updated_at';
+    if (tableName === 'userSessions') {
+      // user_sessions table uses last_active or created_at instead of updated_at
+      timestampField = 'last_active'; // Prefer last_active for user sessions
+    }
+
+    // Fetch records from server that haven't been synced yet
+    const { data: serverRecords, error } = await supabase
+      .from(supabaseTable)
+      .select('*')
+      .eq('master_user_id', this.masterUserId)
+      .gte(timestampField, lastSync);
+
+    if (error) throw error;
+    if (!serverRecords || serverRecords.length === 0) return;
+
+    // Process each server record
+    for (const serverRecord of serverRecords) {
+      try {
+        // Ensure server record timestamps are in consistent ISO string format
+        const normalizedServerRecord = this.normalizeServerRecordTimestamps(serverRecord);
+
+        const localRecord = await localTable.get(normalizedServerRecord.id);
+
+        if (!localRecord) {
+          // New record from server - add to local with validation
+          const validatedData = validateData(normalizedServerRecord, tableName as any);
+          if (validatedData) {
+            const localRecord = {
+              ...validatedData,
+              _syncStatus: 'synced' as const,
+              _lastModified: nowISO(),
+              _version: 1,
+              _deleted: false
+            };
+            await localTable.add(localRecord);
+            this.syncMetrics.totalOperations++;
+            this.syncMetrics.successfulOperations++;
+          } else {
+            console.error(`Validation failed for new server record ${normalizedServerRecord.id} in ${tableName}`);
+            this.syncMetrics.failedOperations++;
+          }
+        } else {
+          // Check for conflicts using enhanced resolution
+          const conflictResult = await this.resolveConflict(tableName, normalizedServerRecord.id, localRecord, normalizedServerRecord);
+
+          if (conflictResult.resolved) {
+            // Apply resolved data with normalized timestamps
+            const updatedRecord = {
+              ...this.normalizeServerRecordTimestamps(conflictResult.data),
+              _syncStatus: 'synced' as const,
+              _lastModified: nowISO(),
+              _version: (localRecord._version || 0) + 1,
+              _deleted: false
+            };
+
+            await localTable.update(normalizedServerRecord.id, updatedRecord);
+            this.syncMetrics.totalOperations++;
+            this.syncMetrics.successfulOperations++;
+          } else {
+            console.error(`Failed to resolve conflict for ${tableName}:${normalizedServerRecord.id}`);
+            this.syncMetrics.failedOperations++;
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing server record ${serverRecord.id} in ${tableName}:`, error);
+        this.syncMetrics.failedOperations++;
+      }
+    }
+
+    // Update last sync time
+    await this.setLastSyncTime(tableName, nowISO());
   }
 
   /**
