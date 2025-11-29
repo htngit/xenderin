@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BubbleBackground } from '@/components/ui/bubble';
 import { AuthService, AuthResponse, serviceManager } from '@/lib/services';
+import { db } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
 import {
   Eye,
@@ -67,6 +68,22 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
     setIsLoading(true);
 
     try {
+      // Step 1: Clear the database completely with fallback
+      try {
+        console.log('Clearing database before login...');
+        await db.clearAllData();
+        console.log('Database cleared successfully');
+      } catch (dbError) {
+        console.error('Error clearing database before login:', dbError);
+        // Fallback: Show error but continue with login process
+        toast({
+          title: intl.formatMessage({ id: 'common.status.warning', defaultMessage: 'Warning' }),
+          description: 'Database cleanup failed, but continuing with login. Some cached data may persist.',
+          variant: "destructive"
+        });
+      }
+
+      // Step 2: Proceed with normal authentication flow
       const response = await authService.login(email, password);
       toast({
         title: intl.formatMessage({ id: 'common.status.success', defaultMessage: 'Success!' }),
@@ -97,6 +114,22 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
     setIsLoading(true);
 
     try {
+      // Step 1: Clear the database completely with fallback (during registration too)
+      try {
+        console.log('Clearing database before registration...');
+        await db.clearAllData();
+        console.log('Database cleared successfully');
+      } catch (dbError) {
+        console.error('Error clearing database before registration:', dbError);
+        // Fallback: Show error but continue with registration process
+        toast({
+          title: intl.formatMessage({ id: 'common.status.warning', defaultMessage: 'Warning' }),
+          description: 'Database cleanup failed, but continuing with registration. Some cached data may persist.',
+          variant: "destructive"
+        });
+      }
+
+      // Step 2: Proceed with normal registration flow
       const response = await authService.register(email, password, name);
 
       // Check if email confirmation is required
@@ -149,6 +182,22 @@ export function LoginPage({ onLoginSuccess, initialView = 'login' }: LoginPagePr
     setIsLoading(true);
 
     try {
+      // Step 1: Clear the database completely with fallback (during password reset too)
+      try {
+        console.log('Clearing database before password reset...');
+        await db.clearAllData();
+        console.log('Database cleared successfully');
+      } catch (dbError) {
+        console.error('Error clearing database before password reset:', dbError);
+        // Fallback: Show error but continue with password reset process
+        toast({
+          title: intl.formatMessage({ id: 'common.status.warning', defaultMessage: 'Warning' }),
+          description: 'Database cleanup failed, but continuing with password reset. Some cached data may persist.',
+          variant: "destructive"
+        });
+      }
+
+      // Step 2: Proceed with normal password reset flow
       await authService.forgotPassword(email);
       toast({
         title: intl.formatMessage({ id: 'common.status.success', defaultMessage: 'Success!' }),

@@ -1,34 +1,35 @@
 # Project Summary
 
 ## Overall Goal
-Fix the service initialization issue in the Xender-In WhatsApp automation application where the app gets stuck on "Initializing services..." screen after PIN validation, by ensuring services are properly initialized after sync completion and are accessible through the React context provider.
+Build a local-first WhatsApp automation application called Xender-In that runs WhatsApp automation fully on the user's device via whatsapp-web.js and Puppeteer, while using Supabase only for authentication, metadata, quota management, and payment processing - with runtime and assets executing locally and Supabase acting as a meta disk, quota enforcer, and optional sync source.
 
 ## Key Knowledge
-- **Technology Stack**: Electron + Vite + React + TypeScript + Supabase + Dexie.js
-- **Architecture**: Offline-first with local IndexedDB cache and Supabase for quota/auth management
-- **Service Management**: Singleton `ServiceInitializationManager` manages 8 services (AuthService, TemplateService, ContactService, GroupService, AssetService, HistoryService, QuotaService, PaymentService)
-- **Phased Delivery**: UI → Backend → WhatsApp Runtime (currently in Phase 2)
-- **Context System**: `ServiceProvider` provides initialized services to React components via `useServices()` hook
-- **Race Condition**: `isInitialized()` method only checked service count, not actual instance readiness
+- **Technology Stack**: Electron + Vite + React + TypeScript + Tailwind CSS + shadcn/ui + Dexie.js (IndexedDB) + Supabase
+- **Architecture Principles**: Local-first execution, Supabase as meta disk only, per-user data isolation, phased development (UI → Backend → WhatsApp)
+- **Database Schema**: Dexie.js with 7 versions, includes asset_blobs table for caching, messageJobs table with master_user_id index fix
+- **Asset Management**: Assets stored in Supabase Storage with metadata in Supabase Database, cached locally in IndexedDB via asset_blobs table
+- **Sync Strategy**: 50% sync rule based on connection speed (adaptive sync: 50% slow, 80% medium, 100% fast)
+- **Security**: RLS enforcement, local security layer, user context management, per-user data isolation
+- **Build Commands**: `npm run dev` (development), `npm run electron:build` (production), `npm run electron:dev` (Electron dev)
 
 ## Recent Actions
-- **[FIXED]** Added missing `serviceManager.initializeAllServices(masterUserId)` call in `App.tsx` after sync completion
-- **[FIXED]** Enhanced `isInitialized()` method in `ServiceInitializationManager.ts` to check that all service instances are non-null
-- **[FIXED]** Added missing `authService` and `paymentService` to `ServiceContext.tsx` interface and service object
-- **[FIXED]** Added error handling to `ServiceProvider` to prevent context provider crashes
-- **[FIXED]** Added missing `serviceManager` import to `Dashboard.tsx`
-- **[ACCOMPLISHED]** Application now progresses past "Initializing services..." screen to Dashboard
-- **[RESOLVED]** Fixed race condition where services were marked as initialized before being accessible
+- **[DONE]** Fixed database schema by adding `master_user_id` index to `messageJobs` table in version 7 to resolve logout error
+- **[DONE]** Implemented clean slate database clearing on login/registration/password reset with proper fallback handling
+- **[DONE]** Added missing `db` import to LoginPage.tsx to fix "db is not defined" error
+- **[DONE]** Enhanced AssetService with comprehensive logging for all key operations (getAssets, getAssetById, queueUpload, getAssetWithCache, cacheAssetFile, getCachedAssetFile, prefetchAssets)
+- **[DONE]** Database schema now properly supports asset management with proper indexes and sync capabilities
 
 ## Current Plan
-- **[DONE]** Fix service initialization flow in App.tsx
-- **[DONE]** Enhance ServiceInitializationManager to ensure services are ready
-- **[DONE]** Complete ServiceContext with all required services
-- **[DONE]** Add error handling to prevent context provider failures
-- **[DONE]** Test complete flow from PIN validation to Dashboard access
-- **[COMPLETE]** Application successfully initializes services and renders Dashboard with all required services available
+- **1. [DONE]** Fix database schema issue with missing master_user_id index in messageJobs table
+- **2. [DONE]** Implement clean slate database clearing on authentication entry points (login/register/forgot password)
+- **3. [DONE]** Add comprehensive logging to AssetService to understand asset flow
+- **4. [DONE]** Add proper imports to LoginPage component
+- **5. [TODO]** Implement proper asset sync from Supabase Database to local IndexedDB on initial sync after login
+- **6. [TODO]** Address the issue where existing assets in Supabase don't appear in the app after clean slate login
+- **7. [TODO]** Complete Phase 2 backend integration (85% complete according to documentation)
+- **8. [TODO]** Prepare for Phase 3 WhatsApp runtime integration (whatsapp-web.js + Puppeteer)
 
 ---
 
 ## Summary Metadata
-**Update time**: 2025-11-27T14:15:36.469Z 
+**Update time**: 2025-11-29T15:49:43.075Z 

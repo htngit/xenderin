@@ -270,6 +270,18 @@ Semua dokumentasi untuk **Phase 3: WhatsApp Runtime Integration** tersimpan di f
 
 ---
 
+### **5. TASK_TO_DO_AND_WALKTHROUGH.md**
+**Deskripsi**: Task list terstruktur & panduan langkah-demi-langkah
+**Isi**:
+- Pre-requisites (Critical Fixes)
+- Weekly Task List (Week 1 - Week 4)
+- Walkthrough Guide (Step-by-step narrative)
+- Tips for Success
+
+**Kapan Digunakan**: Sebagai **daily guide** untuk developer saat mengeksekusi Phase 3
+
+---
+
 ## 📖 Cara Menggunakan Dokumentasi
 
 ### **Sebelum Mulai Development**

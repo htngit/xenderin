@@ -14,31 +14,11 @@ import {
 export class AssetService {
   private syncManager: SyncManager;
   private masterUserId: string | null = null;
+  private initialSyncComplete: boolean = false;
+  private initialSyncPromise: Promise<void> | null = null;
 
   constructor(syncManager?: SyncManager) {
     this.syncManager = syncManager || new SyncManager();
-    this.setupSyncEventListeners();
-  }
-
-  /**
-   * Setup event listeners for sync events
-   */
-  private setupSyncEventListeners() {
-    this.syncManager.addEventListener((event) => {
-      if (event.table === 'assets') {
-        switch (event.type) {
-          case 'sync_complete':
-            console.log('Asset sync completed');
-            break;
-          case 'sync_error':
-            console.error('Asset sync error:', event.error);
-            break;
-          case 'conflict_detected':
-            console.warn('Asset conflict detected:', event.message);
-            break;
-        }
-      }
-    });
   }
 
   /**
@@ -51,11 +31,48 @@ export class AssetService {
     // Start auto sync
     this.syncManager.startAutoSync();
 
-    // Initial sync with error handling
-    // Initial sync with error handling (non-blocking)
-    this.syncManager.triggerSync().catch(error => {
-      console.warn('Initial sync failed, will retry later:', error);
-    });
+    // Initial sync with error handling (non-blocking but tracked)
+    this.initialSyncPromise = this.syncManager.triggerSync()
+      .then(() => {
+        console.log('Initial asset sync completed successfully');
+        this.initialSyncComplete = true;
+      })
+      .catch(error => {
+        console.warn('Initial sync failed, will retry later:', error);
+        this.initialSyncComplete = true; // Mark as complete to unblock UI
+      });
+  }
+
+  /**
+   * Check if initial sync is complete
+   */
+  isInitialSyncComplete(): boolean {
+    return this.initialSyncComplete;
+  }
+
+  /**
+   * Wait for initial sync to complete (with timeout)
+   */
+  async waitForInitialSync(timeoutMs: number = 5000): Promise<boolean> {
+    if (this.initialSyncComplete) {
+      return true;
+    }
+
+    if (!this.initialSyncPromise) {
+      return false;
+    }
+
+    try {
+      await Promise.race([
+        this.initialSyncPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), timeoutMs))
+      ]);
+      return true;
+    } catch (error) {
+      console.warn('Initial sync timeout or failed:', error);
+      this.initialSyncComplete = true; // Mark as complete to unblock UI
+      return false;
+    }
   }
 
 
@@ -138,14 +155,20 @@ export class AssetService {
    * Enforces data isolation using UserContextManager
    */
   async getAssets(): Promise<AssetFile[]> {
+    console.log('AssetService: getAssets() - Starting asset fetch operation');
+    console.log('AssetService: Checking initial sync completion status');
+    console.log('AssetService: Initial sync complete?', this.initialSyncComplete);
+
     try {
       // Enforce data isolation - check user context
       const hasPermission = await userContextManager.canPerformAction('read_assets', 'assets');
       if (!hasPermission) {
+        console.error('AssetService: Access denied - insufficient permissions to read assets');
         throw new Error('Access denied: insufficient permissions to read assets');
       }
 
       const masterUserId = await this.getMasterUserId();
+      console.log('AssetService: Fetching assets for master user ID:', masterUserId);
 
       // First, try to get from local database
       let localAssets = await db.assets
@@ -154,13 +177,18 @@ export class AssetService {
         .and(asset => !asset._deleted)
         .toArray();
 
+      console.log('AssetService: Found', localAssets.length, 'local assets before sync');
+
       // If we have local data, return it
       if (localAssets.length > 0) {
+        console.log('AssetService: Returning', localAssets.length, 'local assets from database');
         return this.transformLocalAssets(localAssets);
       }
 
+      console.log('AssetService: No local assets found, triggering sync to fetch from server...');
       // No local data, try to sync from server
       await this.syncManager.triggerSync();
+      console.log('AssetService: Sync completed, fetching assets from local DB again...');
 
       // Try local again after sync
       localAssets = await db.assets
@@ -169,14 +197,18 @@ export class AssetService {
         .and(asset => !asset._deleted)
         .toArray();
 
+      console.log('AssetService: Found', localAssets.length, 'local assets after sync');
+
       if (localAssets.length > 0) {
+        console.log('AssetService: Returning', localAssets.length, 'local assets from database after sync');
         return this.transformLocalAssets(localAssets);
       }
 
       // Still no data, return empty array (assets are uploaded, not fetched from server initially)
+      console.log('AssetService: No assets found from server, returning empty array');
       return [];
     } catch (error) {
-      console.error('Error fetching assets:', error);
+      console.error('AssetService: Error fetching assets:', error);
       // Fallback to empty array if local operations fail
       return [];
     }
@@ -186,8 +218,10 @@ export class AssetService {
    * Get a single asset by ID
    */
   async getAssetById(id: string): Promise<AssetFile | null> {
+    console.log('AssetService: getAssetById() - Fetching asset with ID:', id);
     try {
       const masterUserId = await this.getMasterUserId();
+      console.log('AssetService: Fetching asset for master user ID:', masterUserId);
 
       // Try local first with proper master_user_id isolation
       const localAsset = await db.assets
@@ -197,15 +231,17 @@ export class AssetService {
         .first();
 
       if (localAsset) {
+        console.log('AssetService: Found asset in local database:', localAsset.name, 'with URL:', localAsset.file_url);
         const transformed = this.transformLocalAssets([localAsset]);
         return transformed[0] || null;
       }
 
+      console.log('AssetService: Asset not found in local database');
       // For assets, we don't have a server table to fallback to
       // All assets are stored locally with their URLs
       return null;
     } catch (error) {
-      console.error('Error fetching asset by ID:', error);
+      console.error('AssetService: Error fetching asset by ID:', error);
       return null;
     }
   }
@@ -401,22 +437,24 @@ export class AssetService {
    * Queue asset upload for offline-first processing
    */
   async queueUpload(file: File, metadata: { category: AssetFile['category'] }): Promise<AssetFile> {
+    console.log('AssetService: queueUpload() - Starting asset upload process for file:', file.name);
+    console.log('AssetService: File details - type:', file.type, 'size:', file.size, 'category:', metadata.category);
+
     try {
       const user = await this.getCurrentUser();
       const masterUserId = await this.getMasterUserId();
+      console.log('AssetService: Current user:', user.id, 'Master user:', masterUserId);
 
       // Check online status
       const isOnline = this.syncManager.getIsOnline();
+      console.log('AssetService: Online status:', isOnline);
 
       // First, generate asset ID for reference
       const assetId = crypto.randomUUID();
-
-      // First, store the file blob in asset_blobs table for caching
-      await this.cacheAssetFile(assetId, file);
+      console.log('AssetService: Generated asset ID:', assetId);
 
       // Prepare local asset data with standardized timestamps
       const nowISOTime = toISOString(new Date());
-      const syncMetadata = addSyncMetadata({}, false);
 
       const newLocalAsset: Omit<LocalAsset, 'id'> = {
         name: file.name,
@@ -442,22 +480,91 @@ export class AssetService {
         ...newLocalAsset
       };
 
-      // Add to local database with pending status
+      console.log('AssetService: Adding asset to local database...');
+      // Add to local database with pending status FIRST
       await db.assets.add(localAsset);
+      console.log('AssetService: Asset added to local database');
+
+      console.log('AssetService: Caching asset file in blob storage...');
+      // THEN store the file blob in asset_blobs table for caching
+      // (cacheAssetFile validates asset exists in DB)
+      await this.cacheAssetFile(assetId, file);
+      console.log('AssetService: Asset file cached successfully');
 
       if (isOnline) {
-        // If online, attempt immediate upload
-        const uploadedAsset = await this.uploadAssetOnline(file, metadata.category);
-        return uploadedAsset;
+        console.log('AssetService: Device is online, attempting direct upload to Supabase Storage...');
+        // If online, upload file to storage and update the asset
+        try {
+          // Upload the file to Supabase Storage
+          const fileName = `${masterUserId}/${Date.now()}_${file.name}`;
+          console.log('AssetService: Uploading file to Supabase Storage with filename:', fileName);
+
+          const { error: uploadError } = await supabase.storage
+            .from('assets')
+            .upload(fileName, file);
+
+          if (uploadError) {
+            console.error('AssetService: Upload to Supabase Storage failed:', uploadError.message);
+            throw new Error(`Failed to upload file: ${uploadError.message}`);
+          }
+
+          console.log('AssetService: File uploaded successfully to Supabase Storage');
+
+          // Get the public URL
+          const { data: urlData } = supabase.storage
+            .from('assets')
+            .getPublicUrl(fileName);
+
+          console.log('AssetService: Generated public URL:', urlData.publicUrl);
+
+          // Update the local asset with the file URL
+          const updatedAsset = {
+            ...localAsset,
+            file_url: urlData.publicUrl,
+            _syncStatus: 'pending' as const,
+            _lastModified: toISOString(new Date())
+          };
+
+          await db.assets.update(assetId, {
+            file_url: urlData.publicUrl,
+            _syncStatus: 'pending',
+            _lastModified: toISOString(new Date())
+          });
+          console.log('AssetService: Local asset updated with URL');
+
+          // Add to sync queue with complete data including master_user_id
+          const syncData = localToSupabase(updatedAsset);
+          console.log('AssetService: Queueing asset for sync:', {
+            id: assetId,
+            master_user_id: syncData.master_user_id,
+            has_master_user_id: !!syncData.master_user_id
+          });
+          await this.syncManager.addToSyncQueue('assets', 'create', assetId, syncData);
+          console.log('AssetService: Asset queued for sync');
+
+          // Return the updated asset
+          const result = this.transformLocalAssets([updatedAsset])[0];
+          console.log('AssetService: Upload complete, returning asset:', result.name);
+          return result;
+        } catch (uploadError) {
+          console.error('AssetService: Failed to upload to storage, will retry later:', uploadError);
+          // Keep asset as pending for background sync
+          await this.syncManager.addToSyncQueue('assets', 'create', assetId, localToSupabase(localAsset));
+          return this.transformLocalAssets([localAsset])[0];
+        }
       } else {
+        console.log('AssetService: Device is offline, queueing for background sync');
         // If offline, queue for background sync
         await this.syncManager.addToSyncQueue('assets', 'create', assetId, localToSupabase(localAsset));
+        console.log('AssetService: Asset queued for background sync');
 
         // Return the local asset
-        return this.transformLocalAssets([localAsset])[0];
+        const result = this.transformLocalAssets([localAsset])[0];
+        console.log('AssetService: Upload queued, returning asset:', result.name);
+        return result;
       }
     } catch (error) {
-      console.error('Error queueing asset upload:', error);
+      console.error('AssetService: Error queueing asset upload:', error);
       throw new Error(handleDatabaseError(error));
     }
   }
@@ -764,9 +871,11 @@ export class AssetService {
    * @param blob - The blob data to cache
    */
   async cacheAssetFile(assetId: string, blob: Blob): Promise<void> {
+    console.log('AssetService: cacheAssetFile() - Attempting to cache asset with ID:', assetId, 'size:', blob.size, 'bytes');
     try {
       // Get the asset to validate existence and get metadata
       const masterUserId = await this.getMasterUserId();
+      console.log('AssetService: Validating asset exists for user:', masterUserId);
       const asset = await db.assets
         .where('master_user_id')
         .equals(masterUserId)
@@ -774,21 +883,29 @@ export class AssetService {
         .first();
 
       if (!asset) {
+        console.error(`AssetService: Asset with ID ${assetId} not found, cannot cache`);
         throw new Error(`Asset with ID ${assetId} not found`);
       }
+
+      console.log('AssetService: Asset validation passed, asset found:', asset.name);
 
       // Check if we're approaching storage limits (16MB for WhatsApp compatibility)
       const maxAssetSize = 16 * 1024 * 1024; // 16MB
       if (blob.size > maxAssetSize) {
+        console.error(`AssetService: Asset exceeds maximum size of ${maxAssetSize} bytes`);
         throw new Error(`Asset exceeds maximum size of ${maxAssetSize} bytes`);
       }
 
       // Check total storage quota
       const currentUsage = await this.getCurrentStorageUsage();
       const maxCacheSize = 500 * 1024 * 1024; // 500MB as specified in the config
+      console.log(`AssetService: Current cache usage: ${currentUsage} bytes, requested: ${blob.size} bytes, max: ${maxCacheSize} bytes`);
+
       if (currentUsage + blob.size > maxCacheSize) {
+        console.log('AssetService: Cache size limit approaching, attempting to evict oldest assets...');
         // Evict oldest assets until there's enough space
         await this.evictOldestAssets(blob.size);
+        console.log('AssetService: Asset eviction completed');
       }
 
       // Store the blob in the asset_blobs table
@@ -804,9 +921,9 @@ export class AssetService {
 
       // Use put to update if exists or add if new
       await db.asset_blobs.put(cacheEntry);
-      console.log(`Asset ${assetId} cached successfully, size: ${blob.size} bytes`);
+      console.log(`AssetService: Asset ${assetId} cached successfully, size: ${blob.size} bytes`);
     } catch (error) {
-      console.error(`Error caching asset file ${assetId}:`, error);
+      console.error(`AssetService: Error caching asset file ${assetId}:`, error);
       throw new Error(`Failed to cache asset: ${handleDatabaseError(error)}`);
     }
   }
@@ -817,9 +934,11 @@ export class AssetService {
    * @returns The cached blob or null if not found
    */
   async getCachedAssetFile(assetId: string): Promise<Blob | null> {
+    console.log('AssetService: getCachedAssetFile() - Attempting to retrieve cached asset with ID:', assetId);
     try {
       const cacheEntry = await db.asset_blobs.get(assetId);
       if (!cacheEntry) {
+        console.log(`AssetService: Asset ${assetId} not found in cache`);
         return null;
       }
 
@@ -828,10 +947,10 @@ export class AssetService {
         last_accessed: toISOString(new Date())
       });
 
-      console.log(`Asset ${assetId} retrieved from cache`);
+      console.log(`AssetService: Asset ${assetId} retrieved from cache, size: ${cacheEntry.size} bytes, type: ${cacheEntry.mime_type}`);
       return cacheEntry.blob;
     } catch (error) {
-      console.error(`Error retrieving cached asset file ${assetId}:`, error);
+      console.error(`AssetService: Error retrieving cached asset file ${assetId}:`, error);
       return null;
     }
   }
@@ -842,13 +961,17 @@ export class AssetService {
    * @returns The asset blob (from cache or fetched from server)
    */
   async getAssetWithCache(assetId: string): Promise<Blob> {
+    console.log('AssetService: getAssetWithCache() - Attempting to retrieve asset with ID:', assetId);
+
     try {
       // First, try to get from cache
       let cachedBlob = await this.getCachedAssetFile(assetId);
       if (cachedBlob) {
+        console.log('AssetService: Asset found in cache, returning cached version');
         return cachedBlob;
       }
 
+      console.log('AssetService: Asset not found in cache, looking for local asset record...');
       // Cache miss - fetch from server
       const masterUserId = await this.getMasterUserId();
       const asset = await db.assets
@@ -857,28 +980,36 @@ export class AssetService {
         .and(item => item.id === assetId)
         .first();
       if (!asset) {
+        console.error(`AssetService: Asset with ID ${assetId} not found in local database`);
         throw new Error(`Asset with ID ${assetId} not found`);
       }
 
+      console.log('AssetService: Found asset record, attempting to download from URL:', asset.file_url);
+
       // Download from the asset URL
+      console.log('AssetService: Fetching asset from server URL:', asset.file_url);
       const response = await fetch(asset.file_url);
       if (!response.ok) {
+        console.error(`AssetService: Failed to fetch asset from ${asset.file_url}: ${response.status} ${response.statusText}`);
         throw new Error(`Failed to fetch asset from ${asset.file_url}: ${response.status} ${response.statusText}`);
       }
 
       const blob = await response.blob();
+      console.log('AssetService: Asset downloaded successfully, size:', blob.size, 'bytes, type:', blob.type);
 
       // Cache the downloaded asset for future use
       try {
         await this.cacheAssetFile(assetId, blob);
+        console.log('AssetService: Asset cached successfully for future use');
       } catch (cacheError) {
         // Non-critical error - continue with the blob even if caching fails
-        console.warn(`Failed to cache asset ${assetId}:`, cacheError);
+        console.warn(`AssetService: Failed to cache asset ${assetId}:`, cacheError);
       }
 
+      console.log('AssetService: Successfully retrieved and cached asset');
       return blob;
     } catch (error) {
-      console.error(`Error getting asset with cache ${assetId}:`, error);
+      console.error(`AssetService: Error getting asset with cache ${assetId}:`, error);
       throw new Error(`Failed to get asset: ${handleDatabaseError(error)}`);
     }
   }
@@ -951,16 +1082,19 @@ export class AssetService {
    * @param assetIds - Array of asset IDs to prefetch
    */
   async prefetchAssets(assetIds: string[]): Promise<void> {
+    console.log('AssetService: prefetchAssets() - Starting prefetch for', assetIds.length, 'assets:', assetIds);
     try {
       const results = await Promise.allSettled(
         assetIds.map(async (assetId) => {
+          console.log(`AssetService: Checking if asset ${assetId} is already cached...`);
           // Check if already cached
           const isCached = await this.getCachedAssetFile(assetId);
           if (isCached) {
-            console.log(`Asset ${assetId} already cached, skipping prefetch`);
+            console.log(`AssetService: Asset ${assetId} already cached, skipping prefetch`);
             return;
           }
 
+          console.log(`AssetService: Asset ${assetId} not cached, fetching from local database...`);
           // Fetch and cache the asset
           const masterUserId = await this.getMasterUserId();
           const asset = await db.assets
@@ -969,16 +1103,21 @@ export class AssetService {
             .and(item => item.id === assetId)
             .first();
           if (!asset) {
+            console.error(`AssetService: Asset with ID ${assetId} not found for prefetch`);
             throw new Error(`Asset with ID ${assetId} not found for prefetch`);
           }
 
+          console.log(`AssetService: Downloading asset ${assetId} from URL:`, asset.file_url);
           const response = await fetch(asset.file_url);
           if (!response.ok) {
+            console.error(`AssetService: Failed to prefetch asset from ${asset.file_url}, status:`, response.status);
             throw new Error(`Failed to prefetch asset from ${asset.file_url}`);
           }
 
           const blob = await response.blob();
+          console.log(`AssetService: Downloaded asset ${assetId}, size:`, blob.size, 'bytes');
           await this.cacheAssetFile(assetId, blob);
+          console.log(`AssetService: Asset ${assetId} successfully cached`);
         })
       );
 
@@ -986,9 +1125,9 @@ export class AssetService {
       const successful = results.filter(r => r.status === 'fulfilled').length;
       const failed = results.filter(r => r.status === 'rejected').length;
 
-      console.log(`Prefetch completed: ${successful} successful, ${failed} failed`);
+      console.log(`AssetService: Prefetch completed: ${successful} successful, ${failed} failed`);
     } catch (error) {
-      console.error('Error pre-fetching assets:', error);
+      console.error('AssetService: Error pre-fetching assets:', error);
       throw new Error(`Failed to prefetch assets: ${handleDatabaseError(error)}`);
     }
   }

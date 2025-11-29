@@ -807,11 +807,37 @@ export class SyncManager {
       delete (serverData as any).uploadDate;
     }
 
-    const { error } = await supabase
-      .from(supabaseTable)
-      .insert(serverData);
+    // Validate critical fields for assets
+    if (table === 'assets') {
+      if (!serverData.master_user_id) {
+        console.error('CRITICAL: master_user_id is missing for asset!', {
+          recordId: _recordId,
+          serverData,
+          originalData: data
+        });
+        throw new Error('master_user_id is required for assets');
+      }
+      console.log('Pushing asset to Supabase:', {
+        id: serverData.id,
+        master_user_id: serverData.master_user_id,
+        file_name: serverData.file_name
+      });
+    }
 
-    if (error) throw error;
+    // Use upsert for assets to handle potential duplicates from race conditions
+    if (table === 'assets') {
+      const { error } = await supabase
+        .from(supabaseTable)
+        .upsert(serverData, { onConflict: 'id' });
+
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from(supabaseTable)
+        .insert(serverData);
+
+      if (error) throw error;
+    }
   }
 
   /**

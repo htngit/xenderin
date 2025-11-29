@@ -296,7 +296,24 @@ export class AppDatabase extends Dexie {
       userSessions: '&id, master_user_id, session_token, expires_at, last_active, is_active, _syncStatus, _lastModified, _version',
       syncQueue: '++id, table, operation, recordId, status, timestamp, retryCount',
       asset_blobs: '&asset_id, size, cached_at, last_accessed',
-      messageJobs: '&id, reservation_id, user_id, status, created_at'
+      messageJobs: '&id, reservation_id, user_id, master_user_id, status, created_at'
+    });
+
+    // Version 7 - Add master_user_id index to messageJobs table to fix clearUserData error
+    this.version(7).stores({
+      contacts: '&id, name, phone, group_id, master_user_id, created_by, tags, notes, is_blocked, last_interaction, _syncStatus, _lastModified, _version, _deleted',
+      groups: '&id, name, master_user_id, created_by, _syncStatus, _lastModified, _version, _deleted',
+      templates: '&id, name, master_user_id, category, _syncStatus, _lastModified, _version, _deleted',
+      activityLogs: '&id, user_id, master_user_id, contact_group_id, template_id, status, template_name, total_contacts, success_count, failed_count, delay_range, scheduled_for, started_at, completed_at, error_message, metadata, _syncStatus, _lastModified, _version, _deleted',
+      assets: '&id, name, type, category, master_user_id, file_name, uploaded_by, mime_type, is_public, _syncStatus, _lastModified, _version, _deleted',
+      quotas: '&id, user_id, master_user_id, plan_type, messages_limit, messages_used, reset_date, is_active, _syncStatus, _lastModified, _version',
+      quotaReservations: '&id, user_id, master_user_id, status, _syncStatus, _lastModified, _version',
+      profiles: '&id, email, name, master_user_id, phone_number, avatar_url, role, is_active, _syncStatus, _lastModified, _version',
+      payments: '&id, user_id, master_user_id, payment_id, duitku_transaction_id, amount, currency, status, payment_method, qr_url, payment_url, expires_at, completed_at, plan_type, _syncStatus, _lastModified, _version',
+      userSessions: '&id, master_user_id, session_token, expires_at, last_active, is_active, _syncStatus, _lastModified, _version',
+      syncQueue: '++id, table, operation, recordId, status, timestamp, retryCount',
+      asset_blobs: '&asset_id, size, cached_at, last_accessed',
+      messageJobs: '&id, reservation_id, user_id, master_user_id, status, created_at'
     });
 
     // Hooks for automatic sync status and timestamp management using standardized utilities
@@ -440,7 +457,7 @@ export class AppDatabase extends Dexie {
       this.profiles.where('master_user_id').equals(masterUserId).delete(),
       this.payments.where('master_user_id').equals(masterUserId).delete(),
       this.userSessions.where('master_user_id').equals(masterUserId).delete(),
-      this.syncQueue.where('masterUserId').equals(masterUserId).delete(),
+      // Note: syncQueue doesn't have master_user_id field, so we skip it
       this.messageJobs.where('master_user_id').equals(masterUserId).delete(),
     ]);
 
@@ -470,7 +487,7 @@ export class AppDatabase extends Dexie {
         this.profiles.where('master_user_id').equals(masterUserId).delete(),
         this.payments.where('master_user_id').equals(masterUserId).delete(),
         this.userSessions.where('master_user_id').equals(masterUserId).delete(),
-        this.syncQueue.where('masterUserId').equals(masterUserId).delete(),
+        // Note: syncQueue doesn't have master_user_id field, so we skip it
         this.messageJobs.where('master_user_id').equals(masterUserId).delete(),
       ];
 

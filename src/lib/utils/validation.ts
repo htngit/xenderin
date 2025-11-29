@@ -305,6 +305,7 @@ export function validateAssetFile(data: any): AssetFile | null {
       file_type: sanitizeString(data.file_type || data.type, 'file_type', 100),
       file_url: sanitizeString(data.file_url || data.url, 'file_url', 1000),
       uploaded_by: isValidUUID(data.uploaded_by) ? data.uploaded_by : '',
+      master_user_id: isValidUUID(data.master_user_id) ? data.master_user_id : '',
       category,
       mime_type: data.mime_type ? sanitizeString(data.mime_type, 'mime_type', 100) : undefined,
       is_public: sanitizeBoolean(data.is_public, 'is_public'),

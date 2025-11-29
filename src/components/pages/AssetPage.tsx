@@ -500,7 +500,7 @@ export function AssetPage() {
 
         try {
           const category = getFileCategory(file);
-          const uploadedAsset = await assetService.uploadAsset(file, category);
+          const uploadedAsset = await assetService.queueUpload(file, { category });
 
           const localAsset: AssetFileLocal = {
             ...uploadedAsset,
@@ -578,10 +578,20 @@ export function AssetPage() {
     }
   }, [fileRejections, toast]);
 
+
   const loadData = async () => {
     try {
       setIsLoading(true);
       setError(null);
+
+      // Check if initial sync is complete
+      const syncComplete = assetService.isInitialSyncComplete();
+
+      if (!syncComplete) {
+        console.log('Initial sync not complete, waiting...');
+        // Wait for initial sync with timeout
+        await assetService.waitForInitialSync(10000); // 10 second timeout
+      }
 
       const data = await assetService.getAssets();
       // Convert the data to match our local interface
@@ -664,7 +674,9 @@ export function AssetPage() {
   };
 
   if (isLoading) {
-    return <LoadingScreen message="Loading assets..." />;
+    const syncComplete = assetService.isInitialSyncComplete();
+    const message = syncComplete ? 'Loading assets...' : 'Syncing assets from server...';
+    return <LoadingScreen message={message} />;
   }
 
   if (error) {
