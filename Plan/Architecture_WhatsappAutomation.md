@@ -185,4 +185,108 @@ All local data scoped by `master_user_id`:
 
 ---
 
+## 📚 Phase 3 Documentation Index
+
+Semua dokumentasi untuk **Phase 3: WhatsApp Runtime Integration** tersimpan di folder `Plan/`:
+
+### **1. Guide_to_Backend_Server_Whatsapp.md**
+**Deskripsi**: Panduan lengkap implementasi WhatsApp runtime integration  
+**Isi**:
+- Overview arsitektur backend WhatsApp
+- Current architecture summary (services, database, send flow)
+- Phase 3 implementation plan (detailed)
+- Core components to implement (WhatsAppManager, MessageProcessor, dll)
+- Implementation steps (step-by-step)
+- Detailed code examples
+- Service integration guide
+- State machine for message processing
+- Error handling & retry logic
+- UI integration
+- Security considerations
+- Testing strategy
+- **Future Development**: Unsubscribe/Whitelist feature (Section 11)
+
+**Kapan Digunakan**: Sebagai **main reference** untuk implementasi Phase 3
+
+---
+
+### **2. BACKEND_WHATSAPP_ANALYSIS_REPORT.md**
+**Deskripsi**: Analisa komprehensif status projek & worker yang diperlukan  
+**Isi**:
+- Executive summary
+- Struktur projek saat ini (frontend, database, service layer)
+- Arsitektur backend WhatsApp yang akan dibangun
+- **8 Worker yang diperlukan** (termasuk MessageReceiverWorker)
+- Data flow: Send Message (end-to-end)
+- Gap analysis (apa yang masih kurang)
+- Kekuatan projek saat ini
+- Rekomendasi urutan pengembangan (4 weeks roadmap)
+- Questions for discussion
+
+**Kapan Digunakan**: Untuk **memahami big picture** dan **planning** sebelum mulai development
+
+---
+
+### **3. WORKERS_IMPLEMENTATION_CHECKLIST.md**
+**Deskripsi**: Checklist detail implementasi untuk setiap worker  
+**Isi**:
+- Quick summary (8 workers overview)
+- Dependencies installation guide
+- File structure to create
+- **Detail checklist untuk setiap worker**:
+  - Worker 1: WhatsAppManager
+  - Worker 2: MessageProcessor
+  - Worker 3: IPC Handlers
+  - Worker 4: Preload Bridge
+  - Worker 5: QueueWorker
+  - Worker 6: SendWorker
+  - Worker 7: StatusWorker
+  - Worker 8: MessageReceiverWorker ⭐ (NEW)
+- Configuration files (electron-builder.yml, vite.config.ts, package.json)
+- Testing checklist (unit, integration, manual)
+- Progress tracking (week-by-week)
+- Critical issues to fix first
+- Success metrics
+
+**Kapan Digunakan**: Sebagai **task list** dan **progress tracker** selama development
+
+---
+
+### **4. UPDATE_SUMMARY_MESSAGERECEIVER.md**
+**Deskripsi**: Summary update penambahan MessageReceiverWorker  
+**Isi**:
+- What changed (worker count 7 → 8)
+- MessageReceiverWorker details
+- Architecture impact (new event flow)
+- Updated metrics
+- Database schema impact (future tables)
+- IPC integration (new channels)
+- Testing impact
+- Timeline adjustment
+- Why build this now (rationale)
+- Important notes (Phase 3 vs Future)
+
+**Kapan Digunakan**: Untuk **memahami perubahan terbaru** dan **rationale** penambahan MessageReceiverWorker
+
+---
+
+## 📖 Cara Menggunakan Dokumentasi
+
+### **Sebelum Mulai Development**
+1. Baca `BACKEND_WHATSAPP_ANALYSIS_REPORT.md` untuk big picture
+2. Review `UPDATE_SUMMARY_MESSAGERECEIVER.md` untuk update terbaru
+3. Baca `Guide_to_Backend_Server_Whatsapp.md` untuk detail implementasi
+
+### **Selama Development**
+1. Gunakan `WORKERS_IMPLEMENTATION_CHECKLIST.md` sebagai task list
+2. Check off setiap item saat selesai
+3. Refer ke `Guide_to_Backend_Server_Whatsapp.md` untuk code examples
+
+### **Untuk Review & Planning**
+1. `BACKEND_WHATSAPP_ANALYSIS_REPORT.md` - Status & roadmap
+2. `WORKERS_IMPLEMENTATION_CHECKLIST.md` - Progress tracking
+3. `UPDATE_SUMMARY_MESSAGERECEIVER.md` - Latest changes
+
+---
+
 📄 **Next**: Generate `FUTURE_ARCHITECTURE.md` setelah MVP selesai

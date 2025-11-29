@@ -1,45 +1,35 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+
 import { paymentService } from '@/lib/services/PaymentService';
+
 import { toast } from 'sonner';
 
+const SUPPORTED_PAYMENT_METHODS = ['OL', 'DA', 'LQRIS', 'NQRIS', 'BC'] as const;
+type PaymentMethod = typeof SUPPORTED_PAYMENT_METHODS[number];
+
+interface CreatePaymentParams {
+  planId: string;
+  paymentMethod: PaymentMethod;
+}
+
 export function usePayment() {
-    const queryClient = useQueryClient();
+  const queryClient = useQueryClient();
 
-    const createPaymentMutation = useMutation({
-        mutationFn: ({ planId, paymentMethod }: { planId: string; paymentMethod: string }) =>
-            paymentService.createPayment(planId, paymentMethod),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['payment_history'] });
-        },
-        onError: (error: any) => {
-            toast.error(`Payment initiation failed: ${error.message}`);
-        }
-    });
+  return useMutation({
+    mutationFn: (params: CreatePaymentParams) =>
+      paymentService.createPayment(params.planId, params.paymentMethod),
 
-    const verifyPaymentMutation = useMutation({
-        mutationFn: (transactionId: string) => paymentService.verifyPayment(transactionId),
-        onSuccess: (data) => {
-            if (data.status === 'success') {
-                toast.success('Payment verified successfully! Subscription updated.');
-                queryClient.invalidateQueries({ queryKey: ['subscription'] });
-                queryClient.invalidateQueries({ queryKey: ['payment_history'] });
-            } else if (data.status === 'pending') {
-                toast.info('Payment is still pending.');
-            } else {
-                toast.error(`Payment status: ${data.status}`);
-            }
-        },
-        onError: (error: any) => {
-            toast.error(`Verification failed: ${error.message}`);
-        }
-    });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['pricing_plans'] });
+      queryClient.invalidateQueries({ queryKey: ['payment_history'] });
+      queryClient.invalidateQueries({ queryKey: ['user_quota'] });
+      toast.success('Payment initiated successfully');
+    },
 
-    return {
-        createPayment: createPaymentMutation.mutateAsync,
-        verifyPayment: verifyPaymentMutation.mutateAsync,
-        isCreating: createPaymentMutation.isPending,
-        isVerifying: verifyPaymentMutation.isPending,
-        createError: createPaymentMutation.error,
-        verifyError: verifyPaymentMutation.error
-    };
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      toast.error(`Payment creation failed: ${message}`);
+    },
+  });
 }

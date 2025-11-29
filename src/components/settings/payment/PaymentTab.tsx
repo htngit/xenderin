@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 
 export function PaymentTab() {
     const { subscription, plans, history, quota, isLoading, refetchSubscription } = useSubscription();
-    const { createPayment, isCreating } = usePayment();
+    const { mutate: createPayment, isPending: isCreating } = usePayment();
 
     const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
