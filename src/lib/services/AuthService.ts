@@ -216,6 +216,15 @@ export class AuthService {
 
       // Online mode: perform full logout with Supabase
       await authHelpers.signOut();
+
+      // Clear sync timestamps to ensure fresh sync on next login
+      if (this.syncManager) {
+        await this.syncManager.clearSyncTimestamps();
+      } else {
+        // Fallback if syncManager not injected
+        const { syncManager } = await import('../sync/SyncManager');
+        await syncManager.clearSyncTimestamps();
+      }
     } catch (error) {
       console.error('Logout error:', error);
       throw error;

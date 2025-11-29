@@ -4,6 +4,7 @@ import { supabase } from '../supabase';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { userContextManager } from './UserContextManager';
 import { db } from '../db';
+import { syncManager } from '../sync/SyncManager';
 
 
 /**
@@ -143,6 +144,7 @@ export function UserProvider({ children }: UserProviderProps) {
           // Clean up old user data if different user
           try {
             await db.clearUserData(previousUserId);
+            await syncManager.clearSyncTimestamps();
             console.log(`Cleaned up data for previous user: ${previousUserId}`);
           } catch (cleanupError) {
             console.error('Error cleaning up previous user data:', cleanupError);

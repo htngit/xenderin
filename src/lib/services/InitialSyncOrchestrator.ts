@@ -43,6 +43,7 @@ export class InitialSyncOrchestrator {
       { name: 'history', service: this.serviceManager.getHistoryService() }
     ];
 
+    // Phase 1: Metadata Sync
     for (const [index, step] of syncSteps.entries()) {
       try {
         onProgress?.({
@@ -70,6 +71,39 @@ export class InitialSyncOrchestrator {
         // Re-throw the error to halt the entire sync process on failure.
         throw new Error(`Sync failed during the '${step.name}' step.`);
       }
+    }
+
+    // Phase 2: Asset Content Sync (Download files)
+    try {
+      onProgress?.({
+        step: 'asset_content',
+        progress: 0,
+        status: 'syncing'
+      });
+
+      const assetService = this.serviceManager.getAssetService();
+      await assetService.syncAssetsFromSupabase((progress) => {
+        onProgress?.({
+          step: 'asset_content',
+          progress: progress,
+          status: 'syncing'
+        });
+      });
+
+      onProgress?.({
+        step: 'asset_content',
+        progress: 100,
+        status: 'completed'
+      });
+    } catch (error: any) {
+      console.error('Asset content sync failed:', error);
+      // We log the error but allow the process to complete as metadata is already synced
+      onProgress?.({
+        step: 'asset_content',
+        progress: 100,
+        status: 'error',
+        error: error.message || 'Failed to download asset content'
+      });
     }
   }
 }

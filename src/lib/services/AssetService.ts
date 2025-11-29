@@ -30,17 +30,6 @@ export class AssetService {
 
     // Start auto sync
     this.syncManager.startAutoSync();
-
-    // Initial sync with error handling (non-blocking but tracked)
-    this.initialSyncPromise = this.syncManager.triggerSync()
-      .then(() => {
-        console.log('Initial asset sync completed successfully');
-        this.initialSyncComplete = true;
-      })
-      .catch(error => {
-        console.warn('Initial sync failed, will retry later:', error);
-        this.initialSyncComplete = true; // Mark as complete to unblock UI
-      });
   }
 
   /**
@@ -928,6 +917,7 @@ export class AssetService {
     }
   }
 
+
   /**
    * Get a cached asset file from IndexedDB
    * @param assetId - The ID of the asset to retrieve
@@ -1078,58 +1068,169 @@ export class AssetService {
   }
 
   /**
-   * Pre-fetch assets in background
-   * @param assetIds - Array of asset IDs to prefetch
+   * Sync and cache all assets for the current user
+   * Matches local metadata with cached blobs and downloads missing content
+   * Returns stats for UI feedback
    */
-  async prefetchAssets(assetIds: string[]): Promise<void> {
-    console.log('AssetService: prefetchAssets() - Starting prefetch for', assetIds.length, 'assets:', assetIds);
+  async syncAssetsFromSupabase(onProgress?: (progress: number) => void): Promise<{ syncedCount: number; skippedCount: number; errorCount: number }> {
+    console.log('AssetService: syncAssetsFromSupabase() - Starting full asset content sync');
     try {
-      const results = await Promise.allSettled(
-        assetIds.map(async (assetId) => {
-          console.log(`AssetService: Checking if asset ${assetId} is already cached...`);
-          // Check if already cached
-          const isCached = await this.getCachedAssetFile(assetId);
-          if (isCached) {
-            console.log(`AssetService: Asset ${assetId} already cached, skipping prefetch`);
-            return;
-          }
+      const masterUserId = await this.getMasterUserId();
 
-          console.log(`AssetService: Asset ${assetId} not cached, fetching from local database...`);
-          // Fetch and cache the asset
-          const masterUserId = await this.getMasterUserId();
-          const asset = await db.assets
-            .where('master_user_id')
-            .equals(masterUserId)
-            .and(item => item.id === assetId)
-            .first();
-          if (!asset) {
-            console.error(`AssetService: Asset with ID ${assetId} not found for prefetch`);
-            throw new Error(`Asset with ID ${assetId} not found for prefetch`);
-          }
+      // Get all asset IDs from local DB (metadata is already synced)
+      const allAssets = await db.assets
+        .where('master_user_id')
+        .equals(masterUserId)
+        .and(asset => !asset._deleted)
+        .toArray();
 
-          console.log(`AssetService: Downloading asset ${assetId} from URL:`, asset.file_url);
-          const response = await fetch(asset.file_url);
-          if (!response.ok) {
-            console.error(`AssetService: Failed to prefetch asset from ${asset.file_url}, status:`, response.status);
-            throw new Error(`Failed to prefetch asset from ${asset.file_url}`);
-          }
+      if (allAssets.length === 0) {
+        console.log('AssetService: No assets found in local DB. Checking Supabase directly...');
 
-          const blob = await response.blob();
-          console.log(`AssetService: Downloaded asset ${assetId}, size:`, blob.size, 'bytes');
-          await this.cacheAssetFile(assetId, blob);
-          console.log(`AssetService: Asset ${assetId} successfully cached`);
-        })
-      );
+        // Fallback: Check Supabase directly in case sync failed or hasn't run yet
+        const { data: serverAssets, error } = await supabase
+          .from('assets')
+          .select('*')
+          .eq('master_user_id', masterUserId);
 
-      // Count successful and failed prefetches
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+        if (error) {
+          console.error('AssetService: Error checking Supabase for assets:', error);
+          if (onProgress) onProgress(100);
+          return { syncedCount: 0, skippedCount: 0, errorCount: 0 };
+        }
 
-      console.log(`AssetService: Prefetch completed: ${successful} successful, ${failed} failed`);
+        if (!serverAssets || serverAssets.length === 0) {
+          console.log('AssetService: No assets found on Supabase either.');
+          if (onProgress) onProgress(100);
+          return { syncedCount: 0, skippedCount: 0, errorCount: 0 };
+        }
+
+        console.log(`AssetService: Found ${serverAssets.length} assets on Supabase that were missing locally. Syncing metadata...`);
+
+        // Insert missing metadata into local DB
+        await db.assets.bulkPut(serverAssets.map(asset => ({
+          ...asset,
+          _syncStatus: 'synced',
+          _lastModified: new Date().toISOString(),
+          _version: 1,
+          _deleted: false
+        })));
+
+        // Update allAssets array to proceed with download
+        allAssets.push(...serverAssets as any[]);
+      }
+
+      const assetIds = allAssets.map(a => a.id);
+      console.log(`AssetService: Found ${assetIds.length} assets to check/download`);
+
+      // Use prefetchAssets with progress tracking
+      const stats = await this.prefetchAssets(assetIds, onProgress);
+
+      console.log('AssetService: Full asset content sync completed', stats);
+
+      return {
+        syncedCount: stats.success,
+        skippedCount: stats.skipped,
+        errorCount: stats.failed
+      };
     } catch (error) {
-      console.error('AssetService: Error pre-fetching assets:', error);
-      throw new Error(`Failed to prefetch assets: ${handleDatabaseError(error)}`);
+      console.error('AssetService: Error during full asset content sync:', error);
+      // Return empty stats on error to avoid breaking UI
+      return { syncedCount: 0, skippedCount: 0, errorCount: 0 };
     }
+  }
+
+  /**
+   * Pre-fetch assets in background with concurrency limit
+   * @param assetIds - Array of asset IDs to prefetch
+   * @param onProgress - Optional callback for progress updates (0-100)
+   * @returns Stats about the prefetch operation
+   */
+  async prefetchAssets(assetIds: string[], onProgress?: (progress: number) => void): Promise<{ success: number; skipped: number; failed: number }> {
+    console.log('AssetService: prefetchAssets() - Starting prefetch for', assetIds.length, 'assets');
+
+    const CONCURRENCY = 3;
+    const total = assetIds.length;
+    let completed = 0;
+
+    // Stats tracking
+    let success = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    const processAsset = async (assetId: string) => {
+      try {
+        // Check if already cached
+        const isCached = await this.getCachedAssetFile(assetId);
+        if (isCached) {
+          console.log(`AssetService: Asset ${assetId} already cached, skipping download`);
+          skipped++;
+          return;
+        }
+
+        // Fetch and cache
+        const masterUserId = await this.getMasterUserId();
+        const asset = await db.assets
+          .where('master_user_id')
+          .equals(masterUserId)
+          .and(item => item.id === assetId)
+          .first();
+
+        if (!asset) {
+          console.warn(`AssetService: Asset with ID ${assetId} not found for prefetch`);
+          failed++; // Count as failed if metadata missing
+          return;
+        }
+
+        if (!asset.file_url) {
+          console.log(`AssetService: Asset ${assetId} has no URL, skipping`);
+          skipped++;
+          return;
+        }
+
+        console.log(`AssetService: Downloading asset ${assetId} from URL:`, asset.file_url);
+        const response = await fetch(asset.file_url);
+        if (!response.ok) {
+          throw new Error(`Failed to prefetch asset from ${asset.file_url}: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        console.log(`AssetService: Downloaded asset ${assetId}, size:`, blob.size, 'bytes');
+        await this.cacheAssetFile(assetId, blob);
+        console.log(`AssetService: Asset ${assetId} successfully cached`);
+        success++;
+
+      } catch (error) {
+        console.error(`AssetService: Error pre-fetching asset ${assetId}:`, error);
+        failed++;
+      } finally {
+        completed++;
+        if (onProgress) {
+          onProgress(Math.round((completed / total) * 100));
+        }
+      }
+    };
+
+    // Execute with concurrency limit
+    const executing = new Set<Promise<void>>();
+    const results: Promise<void>[] = [];
+
+    for (const id of assetIds) {
+      const p = processAsset(id).then(() => {
+        executing.delete(p);
+      });
+      results.push(p);
+      executing.add(p);
+
+      if (executing.size >= CONCURRENCY) {
+        await Promise.race(executing);
+      }
+    }
+
+    await Promise.all(results);
+
+    console.log(`AssetService: Prefetch completed. Processed ${completed}/${total} assets. Success: ${success}, Skipped: ${skipped}, Failed: ${failed}`);
+    return { success, skipped, failed };
   }
 }
 

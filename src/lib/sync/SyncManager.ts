@@ -1095,13 +1095,21 @@ export class SyncManager {
     }
 
     // Fetch updated records from server
+    console.log(`SyncManager: pullTableFromServer - Pulling ${tableName} from server. MasterID: ${this.masterUserId}, LastSync: ${lastSync}`);
+
     const { data: serverRecords, error } = await supabase
       .from(supabaseTable)
       .select('*')
       .eq('master_user_id', this.masterUserId)
       .gte(timestampField, lastSync);
 
-    if (error) throw error;
+    if (error) {
+      console.error(`SyncManager: pullTableFromServer - Error pulling ${tableName}:`, error);
+      throw error;
+    }
+
+    console.log(`SyncManager: pullTableFromServer - Pulled ${serverRecords?.length || 0} records for ${tableName} from server`);
+
     if (!serverRecords || serverRecords.length === 0) return;
 
     // Process each server record with enhanced conflict resolution
@@ -1530,6 +1538,8 @@ export class SyncManager {
     }
 
     // Fetch updated records from server with optional limit
+    console.log(`SyncManager: Pulling ${tableName} from server. MasterID: ${this.masterUserId}, LastSync: ${lastSync}`);
+
     let query = supabase
       .from(supabaseTable)
       .select('*')
@@ -1542,7 +1552,13 @@ export class SyncManager {
 
     const { data: serverRecords, error } = await query;
 
-    if (error) throw error;
+    if (error) {
+      console.error(`SyncManager: Error pulling ${tableName}:`, error);
+      throw error;
+    }
+
+    console.log(`SyncManager: Pulled ${serverRecords?.length || 0} records for ${tableName} from server`);
+
     if (!serverRecords || serverRecords.length === 0) return;
 
     // Process each server record with enhanced conflict resolution
@@ -1692,11 +1708,21 @@ export class SyncManager {
     }
 
     // Fetch records from server that haven't been synced yet
+    console.log(`SyncManager: pullRemainingRecords - Pulling ${tableName} from server. MasterID: ${this.masterUserId}, LastSync: ${lastSync}`);
+
     const { data: serverRecords, error } = await supabase
       .from(supabaseTable)
       .select('*')
       .eq('master_user_id', this.masterUserId)
       .gte(timestampField, lastSync);
+
+    if (error) {
+      console.error(`SyncManager: pullRemainingRecords - Error pulling ${tableName}:`, error);
+      // Don't throw here to avoid stopping other tables in background sync
+      return;
+    }
+
+    console.log(`SyncManager: pullRemainingRecords - Pulled ${serverRecords?.length || 0} records for ${tableName} from server`);
 
     if (error) throw error;
     if (!serverRecords || serverRecords.length === 0) return;
@@ -1757,6 +1783,23 @@ export class SyncManager {
 
     // Update last sync time
     await this.setLastSyncTime(tableName, nowISO());
+  }
+
+  /**
+   * Clear all sync timestamps from local storage
+   * Used when clearing user data to ensure fresh sync on next login
+   */
+  async clearSyncTimestamps(): Promise<void> {
+    try {
+      const tables = db.getSyncableTables();
+      for (const table of tables) {
+        const key = `last_sync_${table}`;
+        localStorage.removeItem(key);
+      }
+      console.log('Cleared all sync timestamps');
+    } catch (error) {
+      console.error('Error clearing sync timestamps:', error);
+    }
   }
 
   /**

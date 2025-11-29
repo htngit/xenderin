@@ -23,6 +23,7 @@ import { AuthService } from '@/lib/services/AuthService';
 import { syncManager } from '@/lib/sync/SyncManager';
 
 import { Toaster } from '@/components/ui/toaster';
+import { useToast } from '@/hooks/use-toast';
 import { UserProvider } from '@/lib/security/UserProvider';
 import { userContextManager } from '@/lib/security/UserContextManager';
 import { db } from '@/lib/db';
@@ -142,6 +143,7 @@ const ProtectedRoutes = ({
 
 // Main App Logic
 const MainApp = () => {
+  const { toast } = useToast();
   const [authData, setAuthData] = useState<AuthResponse | null>(null);
   const [pinData, setPinData] = useState<PINValidation | null>(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
@@ -276,6 +278,50 @@ const MainApp = () => {
 
         // Initialize all services after sync is complete
         await serviceManager.initializeAllServices(masterUserId);
+
+        // After all services are initialized, we need to wait for any background syncs to complete
+        // before running asset sync to avoid conflicts
+        setTimeout(async () => {
+          try {
+            console.log('Waiting for background sync to complete before asset sync...');
+            // Use a timeout to ensure background syncs finish
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            console.log('Starting asset sync from Supabase...');
+            toast({
+              title: "Syncing Assets",
+              description: "Downloading your assets from the cloud...",
+              duration: 3000
+            });
+
+            const assetService = serviceManager.getAssetService();
+            const syncResult = await assetService.syncAssetsFromSupabase();
+            console.log('Asset sync completed:', syncResult);
+
+            if (syncResult.syncedCount > 0) {
+              toast({
+                title: "Assets Sync Complete",
+                description: `Successfully downloaded ${syncResult.syncedCount} assets from the cloud.`,
+                duration: 3000
+              });
+            } else if (syncResult.skippedCount === 0 && syncResult.errorCount === 0) {
+              toast({
+                title: "Assets Already Up-to-Date",
+                description: "No new assets to download.",
+                duration: 3000
+              });
+            }
+          } catch (assetSyncError) {
+            console.error('Error during asset sync from Supabase:', assetSyncError);
+            toast({
+              title: "Asset Sync Failed",
+              description: "Could not download your assets. Please check your connection.",
+              variant: "destructive",
+              duration: 3000
+            });
+            // Continue anyway - assets are not critical for core functionality
+          }
+        }, 0); // Use setTimeout to move this to the next event loop cycle
       }
     } catch (error) {
       console.error("Failed to load account data after PIN:", error);
