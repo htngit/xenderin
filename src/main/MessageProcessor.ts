@@ -21,6 +21,13 @@ export class MessageProcessor {
     }
 
     /**
+     * Get current job being processed
+     */
+    getCurrentJob(): JobData | null {
+        return this.currentJob;
+    }
+
+    /**
      * Process a bulk message job
      */
     async processJob(job: JobData) {

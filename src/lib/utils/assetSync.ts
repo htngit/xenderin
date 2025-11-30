@@ -60,6 +60,7 @@ export async function getLocalAssetMetadata(masterUserId: string): Promise<Asset
       file_type: asset.file_type || asset.type || '',
       file_url: asset.file_url || asset.url || '',
       uploaded_by: asset.uploaded_by,
+      master_user_id: masterUserId, // Required property
       category: asset.category,
       is_public: asset.is_public,
       created_at: asset.created_at,
@@ -126,7 +127,7 @@ export async function syncMissingAssetsToLocalStorage(masterUserId: string): Pro
   try {
     console.log(`Starting asset sync for user: ${masterUserId}`);
     const comparison = await compareAssetMetadata(masterUserId);
-    
+
     console.log(`Found ${comparison.missingInLocal.length} assets missing in local storage`);
 
     let syncedCount = 0;
@@ -137,7 +138,7 @@ export async function syncMissingAssetsToLocalStorage(masterUserId: string): Pro
     for (const asset of comparison.missingInLocal) {
       try {
         console.log(`Syncing asset: ${asset.name} (ID: ${asset.id})`);
-        
+
         // Check if asset already exists in local DB to avoid duplication
         const existingLocalAsset = await db.assets.get(asset.id);
         if (existingLocalAsset) {
@@ -158,7 +159,7 @@ export async function syncMissingAssetsToLocalStorage(masterUserId: string): Pro
           category: asset.category,
           master_user_id: masterUserId,
           is_public: asset.is_public,
-          mime_type: asset.mime_type,
+          mime_type: asset.mime_type || '',
           created_at: asset.created_at,
           updated_at: asset.updated_at,
           _syncStatus: 'synced' as const,

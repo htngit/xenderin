@@ -1,6 +1,6 @@
 // Supabase client configuration and helper functions
 import { createClient } from '@supabase/supabase-js';
-import { Quota, User } from './services/types';
+import { Quota } from './services/types'; //User gue hilangin, check lagi ada error gak
 
 // Environment variables validation
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;

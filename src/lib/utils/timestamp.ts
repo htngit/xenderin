@@ -267,10 +267,10 @@ export function localToSupabase(data: any): any {
 /**
  * Ensure consistent timestamp format for a specific service type
  * @param data - Data to standardize
- * @param serviceType - Type of service ('contact', 'template', 'group', 'history', 'asset', 'quota')
+ * @param _serviceType - Type of service ('contact', 'template', 'group', 'history', 'asset', 'quota')
  * @returns Standardized data with ISO string timestamps
  */
-export function standardizeForService(data: any, serviceType: string): any {
+export function standardizeForService(data: any, _serviceType: string): any {
   if (!data) return data;
 
   // Standardize all services to use ISO strings for consistency
