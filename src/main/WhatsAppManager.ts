@@ -1,6 +1,9 @@
 import { Client, LocalAuth, Message, MessageMedia } from 'whatsapp-web.js';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import * as qrcode from 'qrcode-terminal';
+import { MessageReceiverWorker } from './workers/MessageReceiverWorker';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * WhatsAppManager - Core WhatsApp client manager
@@ -10,10 +13,54 @@ export class WhatsAppManager {
     private client: Client | null = null;
     private mainWindow: BrowserWindow | null = null;
     private status: 'disconnected' | 'connecting' | 'ready' = 'disconnected';
+    private messageReceiverWorker: MessageReceiverWorker | null = null;
 
     constructor(mainWindow: BrowserWindow) {
         this.mainWindow = mainWindow;
         this.initializeClient();
+    }
+
+    /**
+     * Set the MessageReceiverWorker
+     */
+    setMessageReceiverWorker(worker: MessageReceiverWorker) {
+        this.messageReceiverWorker = worker;
+    }
+
+    /**
+     * Get the correct executable path for Puppeteer in production
+     */
+    private getChromiumExecutablePath(): string | undefined {
+        if (!app.isPackaged) {
+            // Development mode - let Puppeteer use default
+            return undefined;
+        }
+
+        // Production mode - point to unpacked chromium
+        // Path: resources/app.asar.unpacked/node_modules/whatsapp-web.js/node_modules/puppeteer-core/.local-chromium/win64-1045629/chrome-win/chrome.exe
+        const chromiumPath = path.join(
+            process.resourcesPath,
+            'app.asar.unpacked',
+            'node_modules',
+            'whatsapp-web.js',
+            'node_modules',
+            'puppeteer-core',
+            '.local-chromium',
+            'win64-1045629',
+            'chrome-win',
+            'chrome.exe'
+        );
+
+        console.log('[WhatsAppManager] Checking Chromium path:', chromiumPath);
+
+        if (fs.existsSync(chromiumPath)) {
+            console.log('[WhatsAppManager] Chromium found at:', chromiumPath);
+            return chromiumPath;
+        } else {
+            console.error('[WhatsAppManager] Chromium not found at expected path:', chromiumPath);
+            // Return undefined to let Puppeteer try its default resolution
+            return undefined;
+        }
     }
 
     /**
@@ -23,22 +70,36 @@ export class WhatsAppManager {
         try {
             console.log('[WhatsAppManager] Initializing client...');
 
+            const executablePath = this.getChromiumExecutablePath();
+
+            // Puppeteer configuration
+            const puppeteerConfig: any = {
+                headless: true,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--disable-gpu'
+                ]
+            };
+
+            // Set executablePath if we found it
+            if (executablePath) {
+                puppeteerConfig.executablePath = executablePath;
+            }
+
+            console.log('[WhatsAppManager] Puppeteer config:', JSON.stringify(puppeteerConfig, null, 2));
+
             this.client = new Client({
                 authStrategy: new LocalAuth({
-                    dataPath: '.wwebjs_auth'
+                    dataPath: app.isPackaged
+                        ? path.join(app.getPath('userData'), '.wwebjs_auth')
+                        : '.wwebjs_auth'
                 }),
-                puppeteer: {
-                    headless: true,
-                    args: [
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        '--disable-dev-shm-usage',
-                        '--disable-accelerated-2d-canvas',
-                        '--no-first-run',
-                        '--no-zygote',
-                        '--disable-gpu'
-                    ]
-                }
+                puppeteer: puppeteerConfig
             });
 
             this.setupEventHandlers();
@@ -110,21 +171,26 @@ export class WhatsAppManager {
             console.log(`[WhatsAppManager] Loading... ${percent}% - ${message}`);
         });
 
-        // Message received event (for future MessageReceiverWorker)
+        // Message received event
         this.client.on('message', async (message: Message) => {
             console.log('[WhatsAppManager] Message received:', message.from);
 
-            // Broadcast to renderer
-            if (this.mainWindow) {
-                this.mainWindow.webContents.send('whatsapp:message-received', {
-                    id: message.id._serialized,
-                    from: message.from,
-                    to: message.to,
-                    body: message.body,
-                    type: message.type,
-                    timestamp: message.timestamp,
-                    hasMedia: message.hasMedia
-                });
+            // Forward to MessageReceiverWorker
+            if (this.messageReceiverWorker) {
+                await this.messageReceiverWorker.handleIncomingMessage(message);
+            } else {
+                // Fallback broadcast if worker not set
+                if (this.mainWindow) {
+                    this.mainWindow.webContents.send('whatsapp:message-received', {
+                        id: message.id._serialized,
+                        from: message.from,
+                        to: message.to,
+                        body: message.body,
+                        type: message.type,
+                        timestamp: message.timestamp,
+                        hasMedia: message.hasMedia
+                    });
+                }
             }
         });
     }
@@ -181,6 +247,9 @@ export class WhatsAppManager {
 
             this.status = 'disconnected';
             this.broadcastStatus('disconnected');
+
+            // Re-initialize client so it can be connected again
+            this.initializeClient();
         } catch (error) {
             console.error('[WhatsAppManager] Disconnect error:', error);
             this.status = 'disconnected';
@@ -365,7 +434,7 @@ export class WhatsAppManager {
      * Broadcast status change to renderer
      */
     private broadcastStatus(status: string): void {
-        if (this.mainWindow) {
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
             this.mainWindow.webContents.send('whatsapp:status-change', status);
         }
     }

@@ -1,0 +1,1 @@
+const i={quotas:1,profiles:1,contacts:2,templates:2,assets:3,activityLogs:4,groups:4,payments:4,quotaReservations:4,userSessions:4};function t(s){return Object.entries(i).filter(([,e])=>e===s).map(([e])=>e)}function r(){return{critical:t(1),high:t(2),medium:t(3),low:t(4)}}export{i as TABLE_SYNC_PRIORITIES,r as getTablesByPriority,t as getTablesForPriority};

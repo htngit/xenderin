@@ -7,9 +7,16 @@ files:
   - dist/**/*
   - dist-electron/**/*
   - package.json
+asarUnpack:
+  - "**/*.local-chromium/**/*"
+  - "**/puppeteer-core/**/*"
+  - "**/whatsapp-web.js/**/*"
 win:
   target: nsis
   icon: public/icon.ico
+extraResources:
+  - from: public/icon.ico
+    to: icon.ico
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

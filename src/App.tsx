@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { LoginPage } from '@/components/pages/LoginPage';
 // RegisterPage, ForgotPasswordPage, ResetPasswordPage are handled within LoginPage
 // import { RegisterPage } from '@/components/pages/RegisterPage';
@@ -28,6 +28,15 @@ import { UserProvider } from '@/lib/security/UserProvider';
 import { userContextManager } from '@/lib/security/UserContextManager';
 import { db } from '@/lib/db';
 import { IntlProvider } from '@/lib/i18n/IntlProvider';
+
+// Debug component to log location
+const RouteDebug = () => {
+  const location = useLocation();
+  useEffect(() => {
+    console.log('Current Route:', location.pathname, location.hash, location.search);
+  }, [location]);
+  return null;
+};
 
 // Public routes component
 const PublicRoutes = ({
@@ -353,6 +362,7 @@ const MainApp = () => {
 
   return (
     <Router>
+      <RouteDebug />
       <div className="min-h-screen bg-background font-sans antialiased">
         {!isAuthenticated ? (
           // 1. Not Authenticated -> Public Routes

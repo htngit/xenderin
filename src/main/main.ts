@@ -1,80 +1,115 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { setupIPC } from './ipcHandlers';
+import { WhatsAppManager } from './WhatsAppManager';
+import { MessageProcessor } from './MessageProcessor';
+import { QueueWorker } from './workers/QueueWorker';
+import { StatusWorker } from './workers/StatusWorker';
+import { MessageReceiverWorker } from './workers/MessageReceiverWorker';
 
 let mainWindow: BrowserWindow | null = null;
+let whatsappManager: WhatsAppManager | null = null;
+let messageProcessor: MessageProcessor | null = null;
+let queueWorker: QueueWorker | null = null;
+let statusWorker: StatusWorker | null = null;
+let messageReceiverWorker: MessageReceiverWorker | null = null;
 
 const createWindow = () => {
     // Determine icon path based on environment
     const iconPath = process.env.VITE_DEV_SERVER_URL
         ? path.join(__dirname, '../../public/icon.png')
-        : path.join(__dirname, '../dist/icon.png');
+        : path.join(path.dirname(app.getAppPath()), 'icon.ico');
 
     // Create the browser window.
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
-        autoHideMenuBar: false,
+        autoHideMenuBar: true,
         icon: iconPath,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
+            // Enable web security but allow local file access for packaged app
+            webSecurity: true,
         },
     });
 
-    // Setup IPC handlers
-    setupIPC(mainWindow);
+    // Initialize Workers
+    console.log('[Main] Initializing workers...');
 
-    // Load the index.html of the app.
+    // 1. WhatsApp Manager (Core)
+    whatsappManager = new WhatsAppManager(mainWindow);
+
+    // 2. Message Processor (State Machine)
+    messageProcessor = new MessageProcessor(whatsappManager, mainWindow);
+
+    // 3. Queue Worker (Job Management)
+    queueWorker = new QueueWorker(messageProcessor);
+
+    // 4. Status Worker (Monitoring)
+    statusWorker = new StatusWorker(whatsappManager, mainWindow);
+
+    // 5. Message Receiver Worker (Incoming Messages)
+    messageReceiverWorker = new MessageReceiverWorker(whatsappManager, mainWindow);
+
+    // Inject MessageReceiverWorker into WhatsAppManager
+    whatsappManager.setMessageReceiverWorker(messageReceiverWorker);
+
+    // Start Status Worker
+    statusWorker.startMonitoring();
+
+    // Setup IPC handlers with dependencies
+    setupIPC(mainWindow, whatsappManager, messageProcessor, queueWorker);
+
+    // Load the app
     if (process.env.VITE_DEV_SERVER_URL) {
         mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-        mainWindow.webContents.openDevTools();
     } else {
-        // Use app.getAppPath() for reliable path resolution in production
-        const appPath = app.getAppPath();
-        const indexPath = path.join(appPath, 'dist', 'index.html');
-        console.log('App path:', appPath);
-        console.log('Loading file from:', indexPath);
+        // In production, load from app.asar
+        const indexPath = path.join(app.getAppPath(), 'dist', 'index.html');
+        console.log('[Main] Loading from:', indexPath);
         mainWindow.loadFile(indexPath);
     }
 
-    // Debug: Log when page finishes loading
-    mainWindow.webContents.on('did-finish-load', () => {
-        console.log('Page finished loading');
+    // Prevent reload (F5, Ctrl+R)
+    mainWindow.webContents.on('before-input-event', (_event, input) => {
+        if (input.key === 'F5' || (input.control && input.key === 'r')) {
+            _event.preventDefault();
+        }
     });
 
-    // Debug: Log any errors
+    // Error listeners
     mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-        console.error('Failed to load:', errorCode, errorDescription);
+        console.error('[Main] Failed to load:', errorCode, errorDescription);
     });
 
-    // Prevent window reload (F5, Ctrl+R) which can cause blank screens
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-        if (input.control && input.key.toLowerCase() === 'r') {
-            event.preventDefault();
-        }
-        if (input.key === 'F5') {
-            event.preventDefault();
-        }
+    mainWindow.webContents.on('crashed', (_event, killed) => {
+        console.error('[Main] Renderer crashed:', killed);
     });
 };
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-app.on('ready', createWindow);
+app.whenReady().then(() => {
+    createWindow();
 
-// Quit when all windows are closed, except on macOS.
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow();
+        }
+    });
 });
 
-app.on('activate', () => {
-    // On OS X it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+app.on('window-all-closed', () => {
+    // Stop workers
+    if (statusWorker) {
+        statusWorker.stopMonitoring();
+    }
+
+    if (whatsappManager) {
+        whatsappManager.disconnect();
+    }
+
+    if (process.platform !== 'darwin') {
+        app.quit();
     }
 });

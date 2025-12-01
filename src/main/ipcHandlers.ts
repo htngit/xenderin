@@ -1,20 +1,48 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { WhatsAppManager } from './WhatsAppManager';
 import { MessageProcessor } from './MessageProcessor';
+import { QueueWorker } from './workers/QueueWorker';
 
 let whatsappManager: WhatsAppManager | null = null;
 let messageProcessor: MessageProcessor | null = null;
+let queueWorker: QueueWorker | null = null;
 
 /**
  * Setup IPC handlers for WhatsApp operations
  * @param mainWindow - Main Electron window
+ * @param wm - WhatsAppManager instance
+ * @param mp - MessageProcessor instance
+ * @param qw - QueueWorker instance
  */
-export const setupIPC = (mainWindow: BrowserWindow) => {
+export const setupIPC = (
+    mainWindow: BrowserWindow,
+    wm?: WhatsAppManager,
+    mp?: MessageProcessor,
+    qw?: QueueWorker
+) => {
     console.log('[IPC] Setting up IPC handlers...');
 
-    // Initialize Managers
-    whatsappManager = new WhatsAppManager(mainWindow);
-    messageProcessor = new MessageProcessor(whatsappManager, mainWindow);
+    // Initialize Managers from arguments or create new ones (fallback)
+    if (wm) {
+        whatsappManager = wm;
+    } else {
+        console.log('[IPC] Creating new WhatsAppManager (Fallback)');
+        whatsappManager = new WhatsAppManager(mainWindow);
+    }
+
+    if (mp) {
+        messageProcessor = mp;
+    } else {
+        console.log('[IPC] Creating new MessageProcessor (Fallback)');
+        messageProcessor = new MessageProcessor(whatsappManager, mainWindow);
+    }
+
+    if (qw) {
+        queueWorker = qw;
+    } else if (messageProcessor) {
+        console.log('[IPC] Creating new QueueWorker (Fallback)');
+        queueWorker = new QueueWorker(messageProcessor);
+    }
 
     /**
      * Connect to WhatsApp
@@ -96,8 +124,6 @@ export const setupIPC = (mainWindow: BrowserWindow) => {
      */
     ipcMain.handle('whatsapp:get-status', async () => {
         try {
-            // console.log('[IPC] whatsapp:get-status called');
-
             if (!whatsappManager) {
                 return { status: 'disconnected', ready: false };
             }
@@ -142,19 +168,30 @@ export const setupIPC = (mainWindow: BrowserWindow) => {
                 throw new Error('WhatsApp is not ready');
             }
 
-            if (!messageProcessor) {
+            // Use QueueWorker if available
+            if (queueWorker) {
+                console.log(`[IPC] Adding job ${jobId} to queue`);
+                queueWorker.addToQueue({
+                    jobId,
+                    contacts,
+                    template,
+                    assets
+                }).catch(err => {
+                    console.error('[IPC] Error adding to queue:', err);
+                });
+            } else if (messageProcessor) {
+                console.warn('[IPC] QueueWorker not available, processing directly');
+                messageProcessor.processJob({
+                    jobId,
+                    contacts,
+                    template,
+                    assets
+                }).catch(err => {
+                    console.error('[IPC] Job processing error:', err);
+                });
+            } else {
                 throw new Error('MessageProcessor not initialized');
             }
-
-            // Start processing in background (don't await)
-            messageProcessor.processJob({
-                jobId,
-                contacts,
-                template,
-                assets
-            }).catch(err => {
-                console.error('[IPC] Job processing error:', err);
-            });
 
             return {
                 success: true,
