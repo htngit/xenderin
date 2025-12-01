@@ -430,7 +430,7 @@ export class HistoryService {
     errorMessage?: string
   ): Promise<void> {
     try {
-      const masterUserId = await this.getMasterUserId();
+      await this.getMasterUserId();
 
       // Check if log exists locally
       const existingLog = await db.activityLogs.get(id);

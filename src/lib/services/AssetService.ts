@@ -119,11 +119,12 @@ export class AssetService {
         id: asset.id,
         name: asset.name,
         // Required properties with fallbacks
-        file_name: asset.name, // Use name as file_name fallback
+        file_name: asset.file_name || asset.name, // Use file_name if available, otherwise fallback to name
         file_size: fileSize,
         file_type: fileType,
         file_url: fileUrl,
         uploaded_by: asset.uploaded_by || '',
+        master_user_id: asset.master_user_id || '', // Add the missing master_user_id property
         category: asset.category,
         is_public: asset.is_public !== false,
         created_at: standardized.created_at || asset.created_at,
@@ -295,7 +296,7 @@ export class AssetService {
 
       // First, upload the file to Supabase Storage
       const fileName = `${masterUserId}/${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('assets')
         .upload(fileName, file);
 
@@ -311,7 +312,7 @@ export class AssetService {
       // Use standardized timestamp utilities
       const timestamps = addTimestamps({}, false);
       const syncMetadata = addSyncMetadata({}, false);
-      const nowISOTime = toISOString(new Date());
+      toISOString(new Date());
 
       // Prepare local asset data
       const newLocalAsset: Omit<LocalAsset, 'id'> = {

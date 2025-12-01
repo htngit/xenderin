@@ -1,4 +1,4 @@
-import React from 'react';
+import { StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './globals.css';
@@ -18,10 +18,10 @@ const queryClient = new QueryClient({
 
 // Remove Next.js specific imports and use standard React DOM
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  <StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
       <Toaster />
     </QueryClientProvider>
-  </React.StrictMode>,
+  </StrictMode>
 );

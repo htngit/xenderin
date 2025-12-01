@@ -204,8 +204,7 @@ export class LocalSecurityService {
   async canAccessRecord(
     action: string,
     resource: string,
-    recordMasterUserId: string,
-    recordId?: string
+    recordMasterUserId: string
   ): Promise<AccessControlResult> {
     return await this.checkPermission(action, resource, recordMasterUserId);
   }

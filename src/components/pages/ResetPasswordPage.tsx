@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BubbleBackground } from '@/components/ui/bubble';
-import { AuthService, serviceManager } from '@/lib/services';
+import { serviceManager } from '@/lib/services';
 import { useToast } from '@/hooks/use-toast';
 import {
   Eye,
@@ -46,12 +46,12 @@ export function ResetPasswordPage() {
       const type = hashParams.get('type');
       const error = hashParams.get('error');
       const errorDescription = hashParams.get('error_description');
-      
+
       console.log('Reset password page loaded');
       console.log('Hash params:', hash);
       console.log('Access token:', accessToken ? 'Present' : 'Not found');
       console.log('Type:', type);
-      
+
       // Check for errors in URL
       if (error) {
         console.error('Auth error:', error, errorDescription);
@@ -64,7 +64,7 @@ export function ResetPasswordPage() {
         });
         return;
       }
-      
+
       // If we have access_token and type=recovery, Supabase has already set the session
       if (accessToken && type === 'recovery') {
         console.log('Valid recovery token found, user should be authenticated');
@@ -75,13 +75,13 @@ export function ResetPasswordPage() {
         });
         return;
       }
-      
+
       // Wait a bit for Supabase to process the token
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Otherwise, check if user is already authenticated
       const user = await authService.getCurrentUser();
-      
+
       if (!user) {
         console.log('No authenticated user found, showing error');
         setTokenValid(false);
@@ -97,7 +97,7 @@ export function ResetPasswordPage() {
 
   const getPasswordStrength = (pwd: string) => {
     if (!pwd) return { strength: 0, label: '', color: '' };
-    
+
     let strength = 0;
     if (pwd.length >= 6) strength += 25;
     if (pwd.length >= 8) strength += 25;
@@ -107,7 +107,7 @@ export function ResetPasswordPage() {
 
     let label = '';
     let color = '';
-    
+
     if (strength <= 25) {
       label = 'Weak';
       color = 'bg-red-500';
@@ -193,10 +193,10 @@ export function ResetPasswordPage() {
   return (
     <div className="min-h-screen relative overflow-hidden">
       <BubbleBackground interactive={true} className="absolute inset-0" />
-      
+
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <AnimatePresence mode="wait">
-          {currentView === 'reset-form' && tokenValid && (
+          {currentView === 'reset-form' && tokenValid === true && (
             <motion.div
               key="reset-form"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -240,7 +240,7 @@ export function ResetPasswordPage() {
                           {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
-                      
+
                       {password && (
                         <div className="space-y-1 mt-2">
                           <div className="flex items-center justify-between text-xs text-white/80">
@@ -298,7 +298,7 @@ export function ResetPasswordPage() {
 
                     <Button
                       type="submit"
-                      disabled={isLoading || tokenValid === false}
+                      disabled={isLoading}
                       className="w-full bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-sm"
                     >
                       {isLoading ? (

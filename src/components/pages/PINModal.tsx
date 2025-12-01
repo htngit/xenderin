@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,7 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AnimatedButton } from '@/components/ui/animated-button';
 import { FadeIn } from '@/components/ui/animations';
 import { PINValidation } from '@/lib/services/types';
-import { Lock, Shield, User, ChevronDown } from 'lucide-react';
+import { Lock, Shield, User } from 'lucide-react';
 import {
   Select,
   SelectContent,

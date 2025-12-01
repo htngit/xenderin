@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import { useNavigate } from 'react-router-dom';
 import { useServices } from '@/lib/services/ServiceContext';
@@ -13,12 +13,11 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AnimatedButton } from '@/components/ui/animated-button';
 import { AnimatedCard } from '@/components/ui/animated-card';
 import { FadeIn } from '@/components/ui/animations';
-import { Contact, Template, Quota, ContactGroup, AssetFile, MessageLog } from '@/lib/services/types';
+import { Contact, Template, Quota, ContactGroup, AssetFile } from '@/lib/services/types';
 import { JobProgressModal } from '@/components/ui/JobProgressModal';
 import { toast } from 'sonner';
 import {
@@ -614,7 +613,7 @@ function SendPageContent({
   );
 }
 
-export function SendPage({ userName }: { userName: string }) {
+export function SendPage() {
   const {
     contactService,
     templateService,
@@ -729,7 +728,6 @@ export function SendPage({ userName }: { userName: string }) {
 
     const targetContacts = getTargetContacts();
     const selectedTemplateData = getSelectedTemplate();
-    const selectedGroupData = getSelectedGroup();
 
     if (!selectedTemplateData) return;
 
@@ -869,9 +867,7 @@ export function SendPage({ userName }: { userName: string }) {
           const currentUserId = await userContextManager.getCurrentMasterUserId();
           if (!currentUserId) return;
 
-          const targetContacts = getTargetContacts();
           const selectedTemplateData = getSelectedTemplate();
-          const selectedGroupData = getSelectedGroup();
 
           // Commit quota
           if (reservationId) {

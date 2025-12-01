@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AnimatedButton } from '@/components/ui/animated-button';
@@ -87,7 +87,7 @@ export const SubscriptionPage: React.FC = () => {
   const handlePlanUpgrade = async (targetPlan: SubscriptionPlan) => {
     if (targetPlan === 'basic') return; // Can't downgrade to basic
     if (targetPlan === currentPlan) return; // Already on this plan
-    
+
     setIsProcessing(true);
     try {
       const user = await authService.getCurrentUser();
@@ -101,7 +101,7 @@ export const SubscriptionPage: React.FC = () => {
         PLAN_CONFIG[targetPlan].price,
         user.id
       );
-      
+
       setPaymentSession(paymentSession);
       setSelectedPlan(targetPlan);
       setPaymentStatus('pending');
@@ -284,9 +284,9 @@ export const SubscriptionPage: React.FC = () => {
                 onClick={() => handlePlanUpgrade(plan as SubscriptionPlan)}
                 disabled={plan === 'basic' || plan === currentPlan || isProcessing}
               >
-                {plan === currentPlan ? 'Current Plan' : 
-                 plan === 'basic' ? 'Free Plan' : 
-                 'Upgrade Now'}
+                {plan === currentPlan ? 'Current Plan' :
+                  plan === 'basic' ? 'Free Plan' :
+                    'Upgrade Now'}
               </AnimatedButton>
             </CardFooter>
           </Card>
@@ -316,7 +316,7 @@ export const SubscriptionPage: React.FC = () => {
                 </div>
               </div>
             )}
-            
+
             {paymentSession?.qrUrl && paymentStatus === 'pending' && (
               <div className="space-y-4">
                 <div className="border rounded-lg p-4 bg-gray-50">
@@ -331,20 +331,19 @@ export const SubscriptionPage: React.FC = () => {
                     Scan this QR code with your e-wallet app
                   </p>
                   <div className="flex items-center justify-center gap-2 text-sm">
-                    <div className={`w-3 h-3 rounded-full ${
-                      (paymentStatus as string) === 'completed' ? 'bg-green-500' :
-                      (paymentStatus as string) === 'failed' ? 'bg-red-500' :
-                      (paymentStatus as string) === 'expired' ? 'bg-red-500' : 'bg-yellow-500'
-                    }`} />
+                    <div className={`w-3 h-3 rounded-full ${(paymentStatus as string) === 'completed' ? 'bg-green-500' :
+                        (paymentStatus as string) === 'failed' ? 'bg-red-500' :
+                          (paymentStatus as string) === 'expired' ? 'bg-red-500' : 'bg-yellow-500'
+                      }`} />
                     <span>
                       {(paymentStatus as string) === 'pending' ? 'Waiting for payment...' :
-                       (paymentStatus as string) === 'completed' ? 'Payment Completed!' :
-                       (paymentStatus as string) === 'failed' ? 'Payment Failed' :
-                       (paymentStatus as string) === 'expired' ? 'Payment Expired' : 'Processing...'}
+                        (paymentStatus as string) === 'completed' ? 'Payment Completed!' :
+                          (paymentStatus as string) === 'failed' ? 'Payment Failed' :
+                            (paymentStatus as string) === 'expired' ? 'Payment Expired' : 'Processing...'}
                     </span>
                   </div>
                 </div>
-                
+
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={cancelPayment}>
                     Cancel Payment
@@ -374,7 +373,7 @@ export const SubscriptionPage: React.FC = () => {
                 <p className="text-sm text-muted-foreground">
                   Payment was not completed. Please try again.
                 </p>
-                <Button 
+                <Button
                   onClick={() => selectedPlan && handlePlanUpgrade(selectedPlan)}
                   className="w-full"
                 >
@@ -392,7 +391,7 @@ export const SubscriptionPage: React.FC = () => {
                 <p className="text-sm text-muted-foreground">
                   Payment session has expired. Please try again.
                 </p>
-                <Button 
+                <Button
                   onClick={() => selectedPlan && handlePlanUpgrade(selectedPlan)}
                   className="w-full"
                 >

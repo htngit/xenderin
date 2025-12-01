@@ -1,6 +1,5 @@
 import { AlertCircle } from 'lucide-react';
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,

@@ -29,7 +29,7 @@ export class InitialSyncOrchestrator {
    * @param masterUserId The ID of the user for whom to sync data (unused as services are already initialized)
    * @param onProgress An optional callback function to report sync progress.
    */
-  async performInitialSync(masterUserId: string, onProgress?: (progress: SyncProgress) => void): Promise<void> {
+  async performInitialSync(_masterUserId: string, onProgress?: (progress: SyncProgress) => void): Promise<void> {
     // Verify that services are initialized before proceeding
     if (!this.serviceManager.isInitialized()) {
       throw new Error('Services must be initialized before performing initial sync');

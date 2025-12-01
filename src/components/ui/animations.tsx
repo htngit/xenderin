@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import { Children } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -81,7 +81,7 @@ export function Stagger({
 }: StaggerProps) {
   return (
     <div className={cn(className)}>
-      {React.Children.map(children, (child, index) => (
+      {Children.map(children, (child, index) => (
         <FadeIn
           key={index}
           delay={initialDelay + (index * staggerDelay)}

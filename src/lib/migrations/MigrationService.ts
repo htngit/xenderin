@@ -1,16 +1,12 @@
-import Dexie from 'dexie';
 import { db } from '../db';
-import { 
-  LocalContact, 
-  LocalGroup, 
-  LocalTemplate, 
-  LocalActivityLog, 
-  LocalAsset, 
-  LocalQuota, 
-  LocalQuotaReservation,
+import {
+  LocalContact,
+  LocalGroup,
+  LocalActivityLog,
+  LocalAsset,
+  LocalQuota,
   LocalProfile,
-  LocalPayment,
-  LocalUserSession
+  LocalPayment
 } from '../db';
 import { nowISO, normalizeTimestamp } from '../utils/timestamp';
 import { validateData } from '../utils/validation';
@@ -19,7 +15,7 @@ import { validateData } from '../utils/validation';
 export interface MigrationMetadata {
   version: number;
   timestamp: string;
- status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
   error?: string;
   recordsProcessed: number;
   recordsFailed: number;
@@ -27,16 +23,16 @@ export interface MigrationMetadata {
 
 // Migration step interface
 export interface MigrationStep {
- id: string;
- description: string;
- execute: () => Promise<void>;
+  id: string;
+  description: string;
+  execute: () => Promise<void>;
   rollback?: () => Promise<void>;
 }
 
 // Migration service class
 export class MigrationService {
   private static readonly MIGRATION_METADATA_KEY = 'migration_metadata';
-  
+
   /**
    * Check if database needs migration
    */
@@ -59,9 +55,9 @@ export class MigrationService {
     }
   }
 
- /**
-   * Save migration metadata
-   */
+  /**
+    * Save migration metadata
+    */
   async saveMigrationMetadata(metadata: MigrationMetadata): Promise<void> {
     try {
       localStorage.setItem(MigrationService.MIGRATION_METADATA_KEY, JSON.stringify(metadata));
@@ -98,7 +94,7 @@ export class MigrationService {
 
       // Get all migration steps
       const migrationSteps = await this.getMigrationSteps();
-      
+
       // Execute each migration step
       for (const step of migrationSteps) {
         console.log(`Executing migration step: ${step.description}`);
@@ -109,7 +105,7 @@ export class MigrationService {
       metadata.status = 'completed';
       metadata.timestamp = nowISO();
       await this.saveMigrationMetadata(metadata);
-      
+
       console.log('Database migration completed successfully');
     } catch (error) {
       console.error('Migration failed:', error);
@@ -165,7 +161,7 @@ export class MigrationService {
    */
   private async migrateV1ToV2(): Promise<void> {
     console.log('Starting migration from v1 to v2');
-    
+
     // Create new tables if they don't exist
     try {
       // The Dexie schema upgrade should handle this automatically
@@ -190,7 +186,7 @@ export class MigrationService {
             _lastModified: nowISO(),
             _version: 1
           };
-          
+
           await db.profiles.add(defaultProfile);
         }
       });
@@ -219,7 +215,7 @@ export class MigrationService {
    */
   private async migrateV2ToV3(): Promise<void> {
     console.log('Starting migration from v2 to v3');
-    
+
     // Update existing user sessions with new fields
     const sessions = await db.userSessions.toArray();
     const updatePromises = sessions.map(session => {
@@ -230,7 +226,7 @@ export class MigrationService {
       };
       return db.userSessions.put(updatedSession);
     });
-    
+
     await Promise.all(updatePromises);
   }
 
@@ -247,25 +243,25 @@ export class MigrationService {
    */
   private async migrateV3ToV4(): Promise<void> {
     console.log('Starting migration from v3 to v4');
-    
+
     // Transform contacts data to add missing fields
     await this.transformContactsData();
-    
+
     // Transform groups data to add missing fields
     await this.transformGroupsData();
-    
+
     // Transform activity logs data to add missing fields
     await this.transformActivityLogsData();
-    
+
     // Transform assets data to add missing fields
     await this.transformAssetsData();
-    
+
     // Transform quotas data to add missing fields
     await this.transformQuotasData();
-    
+
     // Transform profiles data to add missing fields
     await this.transformProfilesData();
-    
+
     // Transform payments data to add missing fields
     await this.transformPaymentsData();
   }
@@ -281,7 +277,7 @@ export class MigrationService {
   /**
    * Transform contacts data to add missing fields
    */
- private async transformContactsData(): Promise<void> {
+  private async transformContactsData(): Promise<void> {
     console.log('Transforming contacts data');
     const contacts = await db.contacts.toArray();
     const updatePromises = contacts.map(contact => {
@@ -299,7 +295,7 @@ export class MigrationService {
           _version: contact._version || 1,
           _deleted: contact._deleted || false
         };
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedContact, 'contact');
         if (validatedData) {
@@ -313,13 +309,13 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform groups data to add missing fields
-   */
+  /**
+    * Transform groups data to add missing fields
+    */
   private async transformGroupsData(): Promise<void> {
     console.log('Transforming groups data');
     const groups = await db.groups.toArray();
@@ -334,7 +330,7 @@ export class MigrationService {
           _version: group._version || 1,
           _deleted: group._deleted || false
         };
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedGroup, 'groups');
         if (validatedData) {
@@ -348,13 +344,13 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform activity logs data to add missing fields
-   */
+  /**
+    * Transform activity logs data to add missing fields
+    */
   private async transformActivityLogsData(): Promise<void> {
     console.log('Transforming activity logs data');
     const logs = await db.activityLogs.toArray();
@@ -380,7 +376,7 @@ export class MigrationService {
           _version: log._version || 1,
           _deleted: log._deleted || false
         };
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedLog, 'activityLogs');
         if (validatedData) {
@@ -394,13 +390,13 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform assets data to add missing fields
-   */
+  /**
+    * Transform assets data to add missing fields
+    */
   private async transformAssetsData(): Promise<void> {
     console.log('Transforming assets data');
     const assets = await db.assets.toArray();
@@ -420,7 +416,7 @@ export class MigrationService {
           _version: asset._version || 1,
           _deleted: asset._deleted || false
         };
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedAsset, 'assets');
         if (validatedData) {
@@ -434,13 +430,13 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform quotas data to add missing fields
-   */
+  /**
+    * Transform quotas data to add missing fields
+    */
   private async transformQuotasData(): Promise<void> {
     console.log('Transforming quotas data');
     const quotas = await db.quotas.toArray();
@@ -457,10 +453,10 @@ export class MigrationService {
           _lastModified: quota._lastModified || nowISO(),
           _version: quota._version || 1
         };
-        
+
         // Calculate remaining messages
         updatedQuota.remaining = updatedQuota.messages_limit - updatedQuota.messages_used;
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedQuota, 'quotas');
         if (validatedData) {
@@ -474,13 +470,13 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform profiles data to add missing fields
-   */
+  /**
+    * Transform profiles data to add missing fields
+    */
   private async transformProfilesData(): Promise<void> {
     console.log('Transforming profiles data');
     const profiles = await db.profiles.toArray();
@@ -499,7 +495,7 @@ export class MigrationService {
           _version: profile._version || 1,
           _deleted: profile._deleted !== undefined ? profile._deleted : false
         };
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedProfile, 'profiles');
         if (validatedData) {
@@ -513,13 +509,13 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform payments data to add missing fields
-   */
+  /**
+    * Transform payments data to add missing fields
+    */
   private async transformPaymentsData(): Promise<void> {
     console.log('Transforming payments data');
     const payments = await db.payments.toArray();
@@ -541,7 +537,7 @@ export class MigrationService {
           _version: payment._version || 1,
           _deleted: payment._deleted !== undefined ? payment._deleted : false
         };
-        
+
         // Validate the transformed data
         const validatedData = validateData(updatedPayment, 'payments');
         if (validatedData) {
@@ -555,54 +551,16 @@ export class MigrationService {
         return Promise.resolve();
       }
     });
-    
+
     await Promise.all(updatePromises);
   }
 
- /**
-   * Transform user sessions data to add missing fields
-   */
-  private async transformUserSessionsData(): Promise<void> {
-    console.log('Transforming user sessions data');
-    const sessions = await db.userSessions.toArray();
-    const updatePromises = sessions.map(session => {
-      try {
-        // Add missing fields with default values
-        const updatedSession: LocalUserSession = {
-          ...session,
-          last_active: session.last_active || nowISO(),
-          is_active: session.is_active !== undefined ? session.is_active : true,
-          ip_address: session.ip_address || '',
-          user_agent: session.user_agent || '',
-          _syncStatus: session._syncStatus || 'pending',
-          _lastModified: session._lastModified || nowISO(),
-          _version: session._version || 1,
-          _deleted: session._deleted !== undefined ? session._deleted : false
-        };
-        
-        // Validate the transformed data
-        const validatedData = validateData(updatedSession, 'userSessions');
-        if (validatedData) {
-          return db.userSessions.put(validatedData as LocalUserSession);
-        } else {
-          console.error('Validation failed for user session:', session);
-          return Promise.resolve();
-        }
-      } catch (error) {
-        console.error('Error transforming user session:', session, error);
-        return Promise.resolve();
-      }
-    });
-    
-    await Promise.all(updatePromises);
-  }
-
- /**
-   * Normalize timestamps in all records
-   */
+  /**
+    * Normalize timestamps in all records
+    */
   async normalizeTimestamps(): Promise<void> {
     console.log('Normalizing timestamps across all tables');
-    
+
     // Normalize contacts
     const contacts = await db.contacts.toArray();
     const normalizedContacts = contacts.map(contact => ({
@@ -612,7 +570,7 @@ export class MigrationService {
       last_interaction: contact.last_interaction ? normalizeTimestamp(contact.last_interaction) : contact.last_interaction
     }));
     await db.contacts.bulkPut(normalizedContacts);
-    
+
     // Normalize groups
     const groups = await db.groups.toArray();
     const normalizedGroups = groups.map(group => ({
@@ -621,7 +579,7 @@ export class MigrationService {
       updated_at: normalizeTimestamp(group.updated_at)
     }));
     await db.groups.bulkPut(normalizedGroups);
-    
+
     // Normalize templates
     const templates = await db.templates.toArray();
     const normalizedTemplates = templates.map(template => ({
@@ -630,7 +588,7 @@ export class MigrationService {
       updated_at: normalizeTimestamp(template.updated_at)
     }));
     await db.templates.bulkPut(normalizedTemplates);
-    
+
     // Normalize activity logs
     const logs = await db.activityLogs.toArray();
     const normalizedLogs = logs.map(log => ({
@@ -642,7 +600,7 @@ export class MigrationService {
       completed_at: log.completed_at ? normalizeTimestamp(log.completed_at) : log.completed_at
     }));
     await db.activityLogs.bulkPut(normalizedLogs);
-    
+
     // Normalize assets
     const assets = await db.assets.toArray();
     const normalizedAssets = assets.map(asset => ({
@@ -651,7 +609,7 @@ export class MigrationService {
       updated_at: normalizeTimestamp(asset.updated_at)
     }));
     await db.assets.bulkPut(normalizedAssets);
-    
+
     // Normalize quotas
     const quotas = await db.quotas.toArray();
     const normalizedQuotas = quotas.map(quota => ({
@@ -661,7 +619,7 @@ export class MigrationService {
       reset_date: normalizeTimestamp(quota.reset_date)
     }));
     await db.quotas.bulkPut(normalizedQuotas);
-    
+
     // Normalize profiles
     const profiles = await db.profiles.toArray();
     const normalizedProfiles = profiles.map(profile => ({
@@ -670,7 +628,7 @@ export class MigrationService {
       updated_at: normalizeTimestamp(profile.updated_at)
     }));
     await db.profiles.bulkPut(normalizedProfiles);
-    
+
     // Normalize payments
     const payments = await db.payments.toArray();
     const normalizedPayments = payments.map(payment => ({
@@ -681,7 +639,7 @@ export class MigrationService {
       completed_at: payment.completed_at ? normalizeTimestamp(payment.completed_at) : payment.completed_at
     }));
     await db.payments.bulkPut(normalizedPayments);
-    
+
     // Normalize user sessions
     const sessions = await db.userSessions.toArray();
     const normalizedSessions = sessions.map(session => ({
@@ -691,7 +649,7 @@ export class MigrationService {
       expires_at: normalizeTimestamp(session.expires_at)
     }));
     await db.userSessions.bulkPut(normalizedSessions);
-    
+
     // Normalize quota reservations
     const reservations = await db.quotaReservations.toArray();
     const normalizedReservations = reservations.map(reservation => ({
@@ -711,19 +669,19 @@ export class MigrationService {
     try {
       // Store original data for potential rollback
       const originalData = await this.backupCurrentData();
-      
+
       // Perform migration
       await this.migrate();
-      
+
       // Verify migration
       const isSuccessful = await this.verifyMigration();
-      
+
       if (!isSuccessful) {
         console.error('Migration verification failed, attempting rollback');
         await this.rollback(originalData);
         throw new Error('Migration verification failed');
       }
-      
+
       console.log('Migration completed successfully with verification');
     } catch (error) {
       console.error('Migration failed:', error);
@@ -736,7 +694,7 @@ export class MigrationService {
    */
   private async rollback(backupData: any): Promise<void> {
     console.log('Starting rollback process');
-    
+
     // Clear current data
     await db.transaction('rw', db.tables, async () => {
       await db.contacts.clear();
@@ -751,19 +709,19 @@ export class MigrationService {
       await db.userSessions.clear();
       await db.syncQueue.clear();
     });
-    
+
     // Restore from backup
     await this.restoreFromBackup(backupData);
-    
+
     console.log('Rollback completed');
   }
 
   /**
    * Backup current data before migration
    */
- private async backupCurrentData(): Promise<any> {
+  private async backupCurrentData(): Promise<any> {
     console.log('Backing up current data');
-    
+
     return {
       contacts: await db.contacts.toArray(),
       groups: await db.groups.toArray(),
@@ -779,12 +737,12 @@ export class MigrationService {
     };
   }
 
- /**
-   * Restore data from backup
-   */
+  /**
+    * Restore data from backup
+    */
   private async restoreFromBackup(backupData: any): Promise<void> {
     console.log('Restoring data from backup');
-    
+
     await db.transaction('rw', db.tables, async () => {
       if (backupData.contacts) await db.contacts.bulkPut(backupData.contacts);
       if (backupData.groups) await db.groups.bulkPut(backupData.groups);
@@ -805,29 +763,24 @@ export class MigrationService {
    */
   private async verifyMigration(): Promise<boolean> {
     console.log('Verifying migration integrity');
-    
+
     try {
-      // Check that all tables exist and have data
-      const contactsCount = await db.contacts.count();
-      const groupsCount = await db.groups.count();
-      const templatesCount = await db.templates.count();
-      
       // Basic integrity checks
       const contacts = await db.contacts.toArray();
-      const hasValidContacts = contacts.every(contact => 
+      const hasValidContacts = contacts.every(contact =>
         contact.id && contact.name && contact.phone && contact.master_user_id
       );
-      
+
       const groups = await db.groups.toArray();
-      const hasValidGroups = groups.every(group => 
+      const hasValidGroups = groups.every(group =>
         group.id && group.name && group.master_user_id
       );
-      
+
       const templates = await db.templates.toArray();
-      const hasValidTemplates = templates.every(template => 
+      const hasValidTemplates = templates.every(template =>
         template.id && template.name && template.master_user_id
       );
-      
+
       return hasValidContacts && hasValidGroups && hasValidTemplates;
     } catch (error) {
       console.error('Migration verification failed:', error);

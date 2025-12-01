@@ -6,6 +6,8 @@ import { GroupService } from './GroupService';
 import { AssetService } from './AssetService';
 import { HistoryService } from './HistoryService';
 import { QuotaService } from './QuotaService';
+import { AuthService } from './AuthService';
+import { PaymentService } from './PaymentService';
 
 interface ServiceContextType {
   templateService: TemplateService;

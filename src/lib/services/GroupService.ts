@@ -351,7 +351,7 @@ export class GroupService {
    */
   async updateGroup(id: string, groupData: Partial<Omit<ContactGroup, 'id' | 'created_at' | 'contact_count' | 'master_user_id' | 'created_by'>>): Promise<ContactGroup | null> {
     try {
-      const masterUserId = await this.getMasterUserId();
+      await this.getMasterUserId();
 
       // Check if group exists locally
       const existingGroup = await db.groups.get(id);
@@ -410,7 +410,7 @@ export class GroupService {
    */
   async deleteGroup(id: string): Promise<boolean> {
     try {
-      const masterUserId = await this.getMasterUserId();
+      await this.getMasterUserId();
 
       // Check if group exists locally
       const existingGroup = await db.groups.get(id);

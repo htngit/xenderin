@@ -4,7 +4,7 @@ import { paymentService } from '@/lib/services/PaymentService';
 
 import { toast } from 'sonner';
 
-const SUPPORTED_PAYMENT_METHODS = ['OL', 'DA', 'LQRIS', 'NQRIS', 'BC'] as const;
+const SUPPORTED_PAYMENT_METHODS = ['OL', 'DA', 'LQRIS', 'NQRIS', 'BC', 'VA_BCA_A1'] as const;
 type PaymentMethod = typeof SUPPORTED_PAYMENT_METHODS[number];
 
 interface CreatePaymentParams {

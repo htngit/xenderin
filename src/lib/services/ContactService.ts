@@ -674,8 +674,8 @@ export class ContactService {
         throw new Error('Access denied: insufficient permissions to update contacts');
       }
 
-      const user = await this.getCurrentUser();
-      const masterUserId = await this.getMasterUserId();
+      await this.getCurrentUser();
+      await this.getMasterUserId();
 
       // Check if contact exists locally
       const existingContact = await db.contacts.get(id);
@@ -735,7 +735,7 @@ export class ContactService {
         throw new Error('Access denied: insufficient permissions to delete contacts');
       }
 
-      const masterUserId = await this.getMasterUserId();
+      await this.getMasterUserId();
 
       // Check if contact exists
       const existingContact = await db.contacts.get(id);

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BubbleBackground } from '@/components/ui/bubble';
-import { AuthService, AuthResponse, serviceManager } from '@/lib/services';
+import { AuthService, AuthResponse } from '@/lib/services';
 import { db } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
 import {

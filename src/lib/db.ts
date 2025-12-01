@@ -5,7 +5,8 @@ import {
   Template,
   ActivityLog,
   AssetFile,
-  Quota
+  Quota,
+  Team
 } from './services/types';
 import {
   addSyncMetadata,
@@ -152,6 +153,15 @@ export interface LocalAssetBlob {
   _version: number;
 }
 
+export interface LocalTeam extends Omit<Team, 'created_at' | 'updated_at'> {
+  created_at: string;
+  updated_at: string;
+  _syncStatus: 'pending' | 'synced' | 'conflict' | 'error';
+  _lastModified: string;
+  _version: number;
+  _deleted: boolean;
+}
+
 export interface LocalMessageJob {
   id: string;
   reservation_id: string;
@@ -204,6 +214,7 @@ export class AppDatabase extends Dexie {
   userSessions!: Table<LocalUserSession>;
   syncQueue!: Table<SyncOperation>;
   asset_blobs!: Table<LocalAssetBlob>;
+  teams!: Table<LocalTeam>;
   messageJobs!: Table<LocalMessageJob>;
 
   constructor() {
@@ -296,6 +307,7 @@ export class AppDatabase extends Dexie {
       userSessions: '&id, master_user_id, session_token, expires_at, last_active, is_active, _syncStatus, _lastModified, _version',
       syncQueue: '++id, table, operation, recordId, status, timestamp, retryCount',
       asset_blobs: '&asset_id, size, cached_at, last_accessed',
+      teams: '&id, name, master_user_id, _syncStatus, _lastModified, _version, _deleted',
       messageJobs: '&id, reservation_id, user_id, master_user_id, status, created_at'
     });
 
@@ -359,12 +371,16 @@ export class AppDatabase extends Dexie {
 
     this.messageJobs.hook('creating', this.onCreating.bind(this));
     this.messageJobs.hook('updating', this.onUpdating.bind(this));
+
+    this.teams.hook('creating', this.onCreating.bind(this));
+    this.teams.hook('updating', this.onUpdating.bind(this));
+    this.teams.hook('deleting', this.onDeleting.bind(this));
   }
 
   /**
    * Enhanced creating hook with standardized timestamp utilities
    */
-  private onCreating(primKey: any, obj: any, trans: any) {
+  private onCreating(_primKey: any, obj: any, _trans: any) {
     // Add standardized sync metadata
     const syncMetadata = addSyncMetadata(obj, false);
 
@@ -385,7 +401,7 @@ export class AppDatabase extends Dexie {
   /**
    * Enhanced updating hook with standardized timestamp utilities
    */
-  private onUpdating(modifications: any, primKey: any, obj: any, trans: any) {
+  private onUpdating(modifications: any, _primKey: any, obj: any, _trans: any) {
     // Add standardized sync metadata
     const syncMetadata = addSyncMetadata(obj, true);
 
@@ -401,7 +417,7 @@ export class AppDatabase extends Dexie {
   /**
    * Enhanced deleting hook with standardized timestamp utilities
    */
-  private onDeleting(primKey: any, obj: any, trans: any) {
+  private onDeleting(_primKey: any, obj: any, _trans: any) {
     // Add standardized sync metadata for soft delete
     const syncMetadata = addSyncMetadata(obj, true);
 
@@ -415,7 +431,7 @@ export class AppDatabase extends Dexie {
     };
 
     // Apply soft delete to the current table
-    return this.table(obj.tableName || 'contacts').update(primKey, softDeleteData);
+    return this.table(obj.tableName || 'contacts').update(_primKey, softDeleteData);
   }
 
   /**
@@ -433,7 +449,8 @@ export class AppDatabase extends Dexie {
       'quotaReservations', // maps to 'quota_reservations' table
       'profiles',
       'payments',
-      'userSessions'      // maps to 'user_sessions' table
+      'userSessions',     // maps to 'user_sessions' table
+      'teams'             // maps to 'teams' table
     ];
   }
 
@@ -457,6 +474,7 @@ export class AppDatabase extends Dexie {
       this.profiles.where('master_user_id').equals(masterUserId).delete(),
       this.payments.where('master_user_id').equals(masterUserId).delete(),
       this.userSessions.where('master_user_id').equals(masterUserId).delete(),
+      this.teams.where('master_user_id').equals(masterUserId).delete(),
       // Note: syncQueue doesn't have master_user_id field, so we skip it
       this.messageJobs.where('master_user_id').equals(masterUserId).delete(),
     ]);
@@ -487,6 +505,7 @@ export class AppDatabase extends Dexie {
         this.profiles.where('master_user_id').equals(masterUserId).delete(),
         this.payments.where('master_user_id').equals(masterUserId).delete(),
         this.userSessions.where('master_user_id').equals(masterUserId).delete(),
+        this.teams.where('master_user_id').equals(masterUserId).delete(),
         // Note: syncQueue doesn't have master_user_id field, so we skip it
         this.messageJobs.where('master_user_id').equals(masterUserId).delete(),
       ];
@@ -522,6 +541,7 @@ export class AppDatabase extends Dexie {
         this.profiles.clear(),
         this.payments.clear(),
         this.userSessions.clear(),
+        this.teams.clear(),
         this.syncQueue.clear(),
         this.asset_blobs.clear(),
         this.messageJobs.clear()

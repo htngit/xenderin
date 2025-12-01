@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,10 +7,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
+  useState,
+} from 'react';
+import {
   Download,
-  X,
-  FileImage,
-  FileVideo,
   FileText,
   ZoomIn,
   ZoomOut,
@@ -47,10 +46,10 @@ const formatFileSize = (bytes: number): string => {
 };
 
 export function FilePreviewModal({ file, isOpen, onClose, onDownload }: FilePreviewModalProps) {
-  const [imageScale, setImageScale] = React.useState(1);
-  const [imageRotation, setImageRotation] = React.useState(0);
-  const [isPlaying, setIsPlaying] = React.useState(false);
-  const [videoRef, setVideoRef] = React.useState<HTMLVideoElement | null>(null);
+  const [imageScale, setImageScale] = useState<number>(1);
+  const [imageRotation, setImageRotation] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [videoRef, setVideoRef] = useState<HTMLVideoElement | null>(null);
 
   if (!file) return null;
 
@@ -96,7 +95,7 @@ export function FilePreviewModal({ file, isOpen, onClose, onDownload }: FilePrev
           <ZoomOut className="h-4 w-4" />
         </Button>
         <span className="text-sm font-medium px-2">
-          {Math.round(imageScale * 100)}%
+          {Math.round(imageScale * 10)}%
         </span>
         <Button
           variant="ghost"
@@ -145,7 +144,7 @@ export function FilePreviewModal({ file, isOpen, onClose, onDownload }: FilePrev
   const renderVideoViewer = () => (
     <div className="flex flex-col items-center space-y-4">
       {/* Video Controls */}
-      <div className="flex items-center space-x-2 p-2 bg-gray-100 rounded-lg">
+      <div className="flex items-center space-x-2 p-2 bg-gray-10 rounded-lg">
         <Button
           variant="ghost"
           size="sm"
@@ -246,7 +245,7 @@ export function FilePreviewModal({ file, isOpen, onClose, onDownload }: FilePrev
               </Badge>
             </div>
           </div>
-          
+
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4 text-sm text-gray-500">
               <span>Size: {formatFileSize(file.size)}</span>
@@ -260,7 +259,7 @@ export function FilePreviewModal({ file, isOpen, onClose, onDownload }: FilePrev
             )}
           </div>
         </DialogHeader>
-        
+
         <div className="p-6 overflow-y-auto flex-1">
           {renderViewer()}
         </div>

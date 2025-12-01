@@ -1,5 +1,4 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Lock, Users, Shield, BarChart3, FileText, Zap } from 'lucide-react';
 
 export function TeamTab() {

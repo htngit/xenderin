@@ -1,14 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import { useNavigate } from 'react-router-dom';
 import { useServices } from '@/lib/services/ServiceContext';
 import { handleServiceError } from '@/lib/utils/errorHandling';
 import { Contact, ContactGroup } from '@/lib/services/types';
-import { LoadingScreen } from '@/components/ui/LoadingScreen';
 import { ErrorScreen } from '@/components/ui/ErrorScreen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -27,11 +26,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { AnimatedButton } from '@/components/ui/animated-button';
 import { AnimatedCard } from '@/components/ui/animated-card';
-import { FadeIn, Stagger } from '@/components/ui/animations';
+import { FadeIn } from '@/components/ui/animations';
 import { ContactModal } from '@/components/ui/ContactModal';
 import { UploadContactsDialog } from '@/components/ui/UploadContactsDialog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,7 +38,6 @@ import {
   Search,
   Upload,
   UserPlus,
-  Filter,
   Users,
   Settings,
   Phone,
@@ -54,9 +51,7 @@ import {
 
 // Placeholder content component for when data is loaded
 function ContactsPageContent({
-  contacts,
   filteredContacts,
-  groups,
   searchQuery,
   setSearchQuery,
   selectedContactIds,

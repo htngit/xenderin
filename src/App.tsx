@@ -99,7 +99,7 @@ const ProtectedRoutes = ({
         path="/send"
         element={
           <ServiceProvider>
-            <SendPage userName={authData?.user.name || 'User'} />
+            <SendPage />
           </ServiceProvider>
         }
       />

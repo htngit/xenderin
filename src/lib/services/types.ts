@@ -200,7 +200,7 @@ export interface PINValidation {
 }
 
 // Payment-related types
-export type SubscriptionPlan = 'free' | 'basic' | 'pro';
+export type SubscriptionPlan = 'basic' | 'premium' | 'enterprise';
 
 export interface DUITKUResponse {
   transactionId: string;
@@ -227,4 +227,15 @@ export interface PaymentSession {
   amount: number;
   expiresAt: string;
   status: 'pending' | 'completed' | 'failed' | 'expired';
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  description?: string;
+  master_user_id: string;
+  pin: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }

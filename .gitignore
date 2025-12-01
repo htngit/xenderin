@@ -8,6 +8,8 @@ node_modules/
 # Production builds
 /dist
 /build
+/dist_electron
+/dist_electron_build
 
 # Environment variables
 .env
@@ -89,7 +91,6 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
-
 # OS generated files
 .DS_Store
 .DS_Store?

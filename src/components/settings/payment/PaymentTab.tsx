@@ -12,9 +12,12 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 
+const SUPPORTED_PAYMENT_METHODS = ['OL', 'DA', 'LQRIS', 'NQRIS', 'BC', 'VA_BCA_A1'] as const;
+type PaymentMethod = typeof SUPPORTED_PAYMENT_METHODS[number];
+
 export function PaymentTab() {
     const { subscription, plans, history, quota, isLoading, refetchSubscription } = useSubscription();
-    const { mutate: createPayment, isPending: isCreating } = usePayment();
+    const { mutateAsync: createPayment, isPending: isCreating } = usePayment();
 
     const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,14 +29,14 @@ export function PaymentTab() {
 
 
 
-    const handleConfirmPayment = async (paymentMethod: string) => {
+    const handleConfirmPayment = async (paymentMethod: PaymentMethod) => {
         if (!selectedPlan) return;
 
         try {
             const transaction = await createPayment({ planId: selectedPlan.id, paymentMethod });
 
             // Redirect to Duitku payment page
-            if (transaction.duitku_payment_url) {
+            if (transaction && transaction.duitku_payment_url) {
                 window.open(transaction.duitku_payment_url, '_blank');
                 toast.success('Payment initiated! Please complete the payment in the new window.');
                 setIsModalOpen(false);
@@ -150,7 +153,12 @@ export function PaymentTab() {
             <PaymentMethodModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                plan={selectedPlan}
+                plan={selectedPlan ? {
+                    id: selectedPlan.id,
+                    name: selectedPlan.plan_name,
+                    price: selectedPlan.price,
+                    description: selectedPlan.description
+                } : null}
                 onConfirm={handleConfirmPayment}
                 isProcessing={isCreating}
             />

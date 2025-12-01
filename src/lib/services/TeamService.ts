@@ -15,11 +15,21 @@ export class TeamService {
             const localTeams = await db.teams
                 .where('master_user_id')
                 .equals(masterUserId)
-                .filter(t => !t._deleted)
+                .filter((t: any) => !t._deleted)
                 .toArray();
 
             if (localTeams.length > 0) {
-                return localTeams;
+                // Transform LocalTeam to Team interface
+                return localTeams.map(localTeam => ({
+                    id: localTeam.id,
+                    name: localTeam.name,
+                    description: localTeam.description,
+                    master_user_id: localTeam.master_user_id,
+                    pin: localTeam.pin,
+                    is_active: localTeam.is_active,
+                    created_at: localTeam.created_at,
+                    updated_at: localTeam.updated_at
+                }));
             }
 
             // If offline or no local data, return empty (sync will handle it)
@@ -115,8 +125,7 @@ export class TeamService {
         await db.teams.update(id, {
             _deleted: true,
             _syncStatus: 'pending',
-            _lastModified: nowISO(),
-            updated_at: nowISO()
+            _lastModified: nowISO()
         });
 
         // Queue sync

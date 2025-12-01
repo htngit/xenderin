@@ -11,7 +11,7 @@ interface UserSwitchDialogProps {
   onClose: () => void;
 }
 
-export function UserSwitchDialog({ isOpen, previousUserId, onConfirm, onClose }: UserSwitchDialogProps) {
+export function UserSwitchDialog({ isOpen, onConfirm, onClose }: UserSwitchDialogProps) {
   const [selectedAction, setSelectedAction] = useState<'cleanup' | 'keep' | 'always'>('cleanup');
   const [rememberChoice, setRememberChoice] = useState(false);
 
