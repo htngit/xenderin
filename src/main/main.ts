@@ -35,6 +35,11 @@ const createWindow = () => {
         },
     });
 
+    // Set application icon for Windows taskbar and window
+    if (process.platform === 'win32') {
+        mainWindow.setIcon(iconPath);
+    }
+
     // Initialize Workers
     console.log('[Main] Initializing workers...');
 
