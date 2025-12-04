@@ -51,6 +51,7 @@ export interface ErrorData {
 }
 
 export interface JobProgressData {
+    metadata: any;
     jobId: string;
     total: number;
     processed: number;

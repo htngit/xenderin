@@ -1,9 +1,0 @@
-@echo off
-echo Starting Vite development server...
-start cmd /k "npm run dev"
-
-echo Waiting for development server to start...
-timeout /t 5 /nobreak >nul
-
-echo Starting Electron app with development server...
-npm run electron:serve

@@ -160,7 +160,7 @@ export const setupIPC = (
     /**
      * Process bulk message job
      */
-    ipcMain.handle('whatsapp:process-job', async (_, { jobId, contacts, template, assets }) => {
+    ipcMain.handle('whatsapp:process-job', async (_, { jobId, contacts, template, assets, delayConfig }) => {
         try {
             console.log(`[IPC] whatsapp:process-job called for job ${jobId}`);
 
@@ -175,7 +175,8 @@ export const setupIPC = (
                     jobId,
                     contacts,
                     template,
-                    assets
+                    assets,
+                    delayConfig
                 }).catch(err => {
                     console.error('[IPC] Error adding to queue:', err);
                 });
@@ -185,7 +186,8 @@ export const setupIPC = (
                     jobId,
                     contacts,
                     template,
-                    assets
+                    assets,
+                    delayConfig
                 }).catch(err => {
                     console.error('[IPC] Job processing error:', err);
                 });

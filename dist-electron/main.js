@@ -25,9 +25,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 const electron = require("electron");
 const path = require("path");
+const fs = require("fs");
 const whatsappWeb_js = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
-const fs = require("fs");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -427,6 +427,7 @@ class MessageProcessor {
     let processed = 0;
     let success = 0;
     let failed = 0;
+    const messageLogs = [];
     this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "processing");
     for (const contact of job.contacts) {
       if (this.isPaused) {
@@ -451,9 +452,28 @@ class MessageProcessor {
         } else {
           await this.whatsappManager.sendMessage(contact.phone, messageContent);
         }
+        messageLogs.push({
+          id: crypto.randomUUID(),
+          activity_log_id: job.jobId,
+          contact_id: contact.id || "",
+          contact_name: contact.name || contact.contact_name || "Unknown Contact",
+          contact_phone: contact.phone || contact.contact_phone || "Unknown Phone",
+          status: "sent",
+          sent_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
         success++;
       } catch (error) {
         console.error(`[MessageProcessor] Failed to send to ${contact.phone}:`, error);
+        messageLogs.push({
+          id: crypto.randomUUID(),
+          activity_log_id: job.jobId,
+          contact_id: contact.id || "",
+          contact_name: contact.name || contact.contact_name || "Unknown Contact",
+          contact_phone: contact.phone || contact.contact_phone || "Unknown Phone",
+          status: "failed",
+          sent_at: (/* @__PURE__ */ new Date()).toISOString(),
+          error_message: error instanceof Error ? error.message : String(error)
+        });
         if (this.mainWindow) {
           this.mainWindow.webContents.send("whatsapp:job-error-detail", {
             jobId: job.jobId,
@@ -465,11 +485,14 @@ class MessageProcessor {
       }
       processed++;
       this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "processing");
-      await this.delay(2e3 + Math.random() * 3e3);
+      const delayMs = this.calculateDelayFromConfig(job.delayConfig);
+      await this.delay(delayMs);
     }
     this.isProcessing = false;
     this.currentJob = null;
-    this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "completed");
+    this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "completed", {
+      logs: messageLogs
+    });
     console.log(`[MessageProcessor] Job ${job.jobId} completed`);
   }
   /**
@@ -529,7 +552,7 @@ class MessageProcessor {
   /**
    * Report progress to renderer
    */
-  reportProgress(jobId, processed, total, success, failed, status) {
+  reportProgress(jobId, processed, total, success, failed, status, metadata) {
     if (this.mainWindow) {
       this.mainWindow.webContents.send("whatsapp:job-progress", {
         jobId,
@@ -537,9 +560,38 @@ class MessageProcessor {
         total,
         success,
         failed,
-        status
+        status,
+        metadata
       });
     }
+  }
+  /**
+   * Calculate delay in milliseconds based on delay configuration
+   * @param delayConfig - Optional delay configuration from job settings
+   * @returns Delay in milliseconds
+   */
+  calculateDelayFromConfig(delayConfig) {
+    const DEFAULT_MIN_DELAY_MS = 2e3;
+    const DEFAULT_MAX_DELAY_MS = 5e3;
+    if (!delayConfig || !delayConfig.delayRange || delayConfig.delayRange.length === 0) {
+      console.warn("[MessageProcessor] No valid delayConfig provided, using default values");
+      return DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
+    }
+    if (delayConfig.delayRange.length < 1) {
+      console.warn("[MessageProcessor] Invalid delayRange, using default values");
+      return DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
+    }
+    const minDelayMs = delayConfig.delayRange[0] * 1e3;
+    let maxDelayMs = minDelayMs;
+    if (delayConfig.mode === "dynamic" && delayConfig.delayRange.length >= 2) {
+      maxDelayMs = delayConfig.delayRange[1] * 1e3;
+      if (maxDelayMs <= minDelayMs) {
+        console.warn("[MessageProcessor] Invalid delay range (max <= min), using static mode");
+        return minDelayMs;
+      }
+      return minDelayMs + Math.random() * (maxDelayMs - minDelayMs);
+    }
+    return minDelayMs;
   }
   delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -700,7 +752,7 @@ const setupIPC = (mainWindow2, wm, mp, qw) => {
       return null;
     }
   });
-  electron.ipcMain.handle("whatsapp:process-job", async (_, { jobId, contacts, template, assets }) => {
+  electron.ipcMain.handle("whatsapp:process-job", async (_, { jobId, contacts, template, assets, delayConfig }) => {
     try {
       console.log(`[IPC] whatsapp:process-job called for job ${jobId}`);
       if (!whatsappManager$1 || !whatsappManager$1.isReady()) {
@@ -712,7 +764,8 @@ const setupIPC = (mainWindow2, wm, mp, qw) => {
           jobId,
           contacts,
           template,
-          assets
+          assets,
+          delayConfig
         }).catch((err) => {
           console.error("[IPC] Error adding to queue:", err);
         });
@@ -722,7 +775,8 @@ const setupIPC = (mainWindow2, wm, mp, qw) => {
           jobId,
           contacts,
           template,
-          assets
+          assets,
+          delayConfig
         }).catch((err) => {
           console.error("[IPC] Job processing error:", err);
         });
@@ -859,27 +913,87 @@ class MessageReceiverWorker {
     return this.unsubscribeKeywords.some((keyword) => lowerContent.includes(keyword));
   }
 }
+async function fileExists(filePath) {
+  try {
+    await fs.promises.access(filePath, fs.constants.F_OK | fs.constants.R_OK);
+    return true;
+  } catch (error) {
+    console.debug(`[Main] File does not exist or is not accessible: ${filePath}`, error);
+    return false;
+  }
+}
 let mainWindow = null;
 let whatsappManager = null;
 let messageProcessor = null;
 let queueWorker = null;
 let statusWorker = null;
 let messageReceiverWorker = null;
-const createWindow = () => {
-  const iconPath = process.env.VITE_DEV_SERVER_URL ? path.join(__dirname, "../../public/icon.png") : path.join(path.dirname(electron.app.getAppPath()), "icon.ico");
-  mainWindow = new electron.BrowserWindow({
-    width: 1200,
-    height: 800,
-    autoHideMenuBar: true,
-    icon: iconPath,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      nodeIntegration: false,
-      contextIsolation: true,
-      // Enable web security but allow local file access for packaged app
-      webSecurity: true
+const createWindow = async () => {
+  let iconPath;
+  try {
+    if (process.env.VITE_DEV_SERVER_URL) {
+      const publicPath = path.join(__dirname, "../../public/icon.png");
+      console.log("[Main] Development mode - trying icon path:", publicPath);
+      const fileExistsResult = await fileExists(publicPath);
+      if (fileExistsResult) {
+        iconPath = publicPath;
+      } else {
+        console.warn("[Main] Development icon not found, falling back to default");
+        iconPath = void 0;
+      }
+    } else {
+      const appDir = path.dirname(electron.app.getAppPath());
+      const productionIconPath = path.join(appDir, "icon.ico");
+      console.log("[Main] Production mode - trying icon path:", productionIconPath);
+      const fileExistsResult = await fileExists(productionIconPath);
+      if (fileExistsResult) {
+        iconPath = productionIconPath;
+      } else {
+        const resourcesIconPath = path.join(process.resourcesPath, "icon.ico");
+        console.log("[Main] Fallback icon path:", resourcesIconPath);
+        const resourcesFileExists = await fileExists(resourcesIconPath);
+        iconPath = resourcesFileExists ? resourcesIconPath : void 0;
+      }
     }
-  });
+  } catch (error) {
+    console.error("[Main] Error determining icon path:", error);
+    iconPath = void 0;
+  }
+  try {
+    mainWindow = new electron.BrowserWindow({
+      width: 1200,
+      height: 800,
+      autoHideMenuBar: true,
+      icon: iconPath,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        nodeIntegration: false,
+        contextIsolation: true,
+        // Enable web security but allow local file access for packaged app
+        webSecurity: true
+      }
+    });
+    if (process.platform === "win32" && iconPath) {
+      try {
+        mainWindow.setIcon(iconPath);
+      } catch (iconError) {
+        console.error("[Main] Failed to set window icon:", iconError);
+      }
+    }
+  } catch (windowError) {
+    console.error("[Main] Failed to create browser window:", windowError);
+    mainWindow = new electron.BrowserWindow({
+      width: 1200,
+      height: 800,
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: true
+      }
+    });
+  }
   console.log("[Main] Initializing workers...");
   whatsappManager = new WhatsAppManager(mainWindow);
   messageProcessor = new MessageProcessor(whatsappManager, mainWindow);
@@ -908,11 +1022,13 @@ const createWindow = () => {
     console.error("[Main] Renderer crashed:", killed);
   });
 };
-electron.app.whenReady().then(() => {
-  createWindow();
+electron.app.whenReady().then(async () => {
+  await createWindow();
   electron.app.on("activate", () => {
     if (electron.BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createWindow().catch((error) => {
+        console.error("[Main] Error in activate handler:", error);
+      });
     }
   });
 });

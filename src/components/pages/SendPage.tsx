@@ -311,7 +311,7 @@ function SendPageContent({
                                     </div>
                                   </div>
                                   {isSelected && (
-                                    <div className="flex-shrink-0">
+                                    <div className="shrink-0">
                                       <div className="h-4 w-4 rounded-full bg-primary flex items-center justify-center">
                                         <CheckCircle className="h-3 w-3 text-white" />
                                       </div>
@@ -791,8 +791,12 @@ export function SendPage() {
       const result = await window.electron.whatsapp.processJob(
         jobId,
         targetContacts,
-        selectedTemplateData,
-        assetPaths
+        {
+          template: selectedTemplateData,
+          assets: assetPaths,
+          mode: sendingMode,
+          delayRange: delayRange
+        }
       );
 
       if (!result.success) {
@@ -883,7 +887,7 @@ export function SendPage() {
             updated_at: new Date().toISOString()
           });
 
-          // Create History Log
+          // Create History Log with individual message logs
           await historyService.createLog({
             user_id: currentUserId,
             master_user_id: currentUserId,
@@ -896,8 +900,8 @@ export function SendPage() {
             status: 'completed',
             delay_range: delayRange[0],
             metadata: {
-              // We can add detailed logs here if needed, but for now summary is enough
-              jobId: activeJobId
+              jobId: activeJobId,
+              logs: data.metadata?.logs || [] // Store individual message logs
             }
           });
 

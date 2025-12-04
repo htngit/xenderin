@@ -790,20 +790,68 @@ export class HistoryService {
   /**
    * Get all individual message logs from all campaigns
    * Flattens the metadata.logs from each activity log
+   * Handles cases where metadata.logs is missing or empty
+   * Provides fallback mechanism and proper error handling
    */
   async getAllMessageLogs(): Promise<MessageLog[]> {
     try {
       const activityLogs = await this.getActivityLogs();
       const messageLogs: MessageLog[] = [];
+      let logsWithMissingMetadata = 0;
+      let logsWithEmptyMetadata = 0;
 
       for (const log of activityLogs) {
-        if (log.metadata && Array.isArray(log.metadata.logs)) {
-          const logs = log.metadata.logs as MessageLog[];
-          messageLogs.push(...logs);
+        // Handle missing metadata
+        if (!log.metadata) {
+          logsWithMissingMetadata++;
+          console.warn(`Activity log ${log.id} has no metadata - creating fallback message log`);
+
+          // Create fallback message log for this activity
+          const fallbackLog: MessageLog = {
+            id: `fallback-${log.id}-${crypto.randomUUID()}`,
+            activity_log_id: log.id,
+            contact_id: '', // No contact info available
+            contact_name: 'Unknown Contact', // Fallback name
+            contact_phone: 'Unknown Number', // Fallback phone
+            status: log.status === 'completed' ? 'sent' : log.status === 'failed' ? 'failed' : 'pending',
+            sent_at: log.created_at || new Date().toISOString(),
+            error_message: log.error_message || `No detailed logs available for this activity (${log.status})`
+          };
+          messageLogs.push(fallbackLog);
+          continue;
         }
+
+        // Handle missing or empty logs array
+        if (!log.metadata.logs || !Array.isArray(log.metadata.logs) || log.metadata.logs.length === 0) {
+          logsWithEmptyMetadata++;
+          console.warn(`Activity log ${log.id} has empty or invalid metadata.logs - creating fallback message log`);
+
+          // Create fallback message log for this activity
+          const fallbackLog: MessageLog = {
+            id: `fallback-${log.id}-${crypto.randomUUID()}`,
+            activity_log_id: log.id,
+            contact_id: '', // No contact info available
+            contact_name: 'Unknown Contact', // Fallback name
+            contact_phone: 'Unknown Number', // Fallback phone
+            status: log.status === 'completed' ? 'sent' : log.status === 'failed' ? 'failed' : 'pending',
+            sent_at: log.created_at || new Date().toISOString(),
+            error_message: log.error_message || `No detailed message logs available for this activity (${log.status})`
+          };
+          messageLogs.push(fallbackLog);
+          continue;
+        }
+
+        // Normal case: valid logs array
+        const logs = log.metadata.logs as MessageLog[];
+        messageLogs.push(...logs);
       }
 
-      // Sort by sent_at descending
+      // Log statistics about data quality
+      if (logsWithMissingMetadata > 0 || logsWithEmptyMetadata > 0) {
+        console.info(`Message logs summary: ${messageLogs.length} total logs, ${logsWithMissingMetadata} with missing metadata, ${logsWithEmptyMetadata} with empty logs`);
+      }
+
+      // Sort by sent_at descending (newest first)
       return messageLogs.sort((a, b) => {
         const dateA = a.sent_at ? new Date(a.sent_at).getTime() : 0;
         const dateB = b.sent_at ? new Date(b.sent_at).getTime() : 0;
@@ -811,7 +859,29 @@ export class HistoryService {
       });
     } catch (error) {
       console.error('Error fetching message logs:', error);
-      // Return empty array on error to prevent UI crash
+
+      // Enhanced error handling with meaningful error messages
+      let errorMessage = 'Unknown error occurred while fetching message logs';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+
+        // Provide specific guidance for common error scenarios
+        if (error.message.includes('network') || error.message.includes('offline')) {
+          errorMessage = 'Cannot fetch message logs: Network connection required';
+        } else if (error.message.includes('permission') || error.message.includes('access')) {
+          errorMessage = 'Cannot fetch message logs: Insufficient permissions';
+        }
+      }
+
+      // Log the enhanced error for debugging
+      console.error('Enhanced error details:', {
+        originalError: error,
+        userFriendlyMessage: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+
+      // Return empty array to prevent UI crash, but consider throwing
+      // a more specific error that the UI can handle gracefully
       return [];
     }
   }

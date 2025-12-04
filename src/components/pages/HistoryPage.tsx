@@ -63,13 +63,21 @@ function HistoryPageContent({
                 {intl.formatMessage({ id: 'common.button.back', defaultMessage: 'Back' })}
               </Button>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">{intl.formatMessage({ id: 'history.title', defaultMessage: 'Message History' })}</h1>
-                <p className="text-gray-600">{intl.formatMessage({ id: 'history.subtitle', defaultMessage: 'View individual message sending logs' })}</p>
+                <div className="flex items-center space-x-2 mb-1">
+                  <MessageSquare className="h-5 w-5 text-blue-600" />
+                  <h1 className="text-3xl font-bold text-gray-900">{intl.formatMessage({ id: 'history.message_history_title', defaultMessage: 'Individual Message Logs' })}</h1>
+                </div>
+                <p className="text-gray-600">{intl.formatMessage({ id: 'history.message_history_desc', defaultMessage: 'Detailed records of each message sent to individual contacts' })}</p>
+                <div className="mt-2">
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                    {intl.formatMessage({ id: 'history.type_individual', defaultMessage: 'Individual Messages' })}
+                  </Badge>
+                </div>
               </div>
             </div>
             <Button variant="outline" onClick={() => navigate('/campaign-history')}>
               <MessageSquare className="h-4 w-4 mr-2" />
-              {intl.formatMessage({ id: 'history.button.view_activity', defaultMessage: 'View Activity Logs' })}
+              {intl.formatMessage({ id: 'history.button.view_activity', defaultMessage: 'View Campaign Logs' })}
             </Button>
           </div>
 
@@ -154,10 +162,60 @@ function HistoryPageContent({
             </CardHeader>
             <CardContent>
               {filteredLogs.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery || statusFilter !== 'all'
-                    ? intl.formatMessage({ id: 'history.empty.search', defaultMessage: 'No message logs found matching your filters.' })
-                    : intl.formatMessage({ id: 'history.empty.all', defaultMessage: 'No message logs yet.' })}
+                <div className="text-center py-8 space-y-4">
+                  {searchQuery || statusFilter !== 'all' ? (
+                    <>
+                      <AlertTriangle className="h-8 w-8 text-yellow-500 mx-auto" />
+                      <h3 className="text-lg font-medium text-gray-900 dark:text-gray-50">
+                        {intl.formatMessage({ id: 'history.empty.search', defaultMessage: 'No message logs found matching your filters.' })}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {intl.formatMessage({
+                          id: 'history.empty.search.help',
+                          defaultMessage: 'Try adjusting your search terms or clearing filters to see more results.'
+                        })}
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSearchQuery('');
+                            setStatusFilter('all');
+                          }}
+                        >
+                          {intl.formatMessage({ id: 'history.empty.search.clear_filters', defaultMessage: 'Clear Filters' })}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => navigate('/send')}
+                        >
+                          {intl.formatMessage({ id: 'history.empty.search.send_messages', defaultMessage: 'Send Messages' })}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <MessageSquare className="h-8 w-8 text-blue-500 mx-auto" />
+                      <h3 className="text-lg font-medium text-gray-900 dark:text-gray-50">
+                        {intl.formatMessage({ id: 'history.empty.all', defaultMessage: 'No message logs yet.' })}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {intl.formatMessage({
+                          id: 'history.empty.all.help',
+                          defaultMessage: 'You haven\'t sent any messages yet. Start by creating a campaign and sending your first messages.'
+                        })}
+                      </p>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => navigate('/send')}
+                      >
+                        {intl.formatMessage({ id: 'history.empty.all.send_first', defaultMessage: 'Send Your First Messages' })}
+                      </Button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -240,7 +298,34 @@ export function HistoryPage() {
     } catch (err) {
       console.error('Failed to load message logs:', err);
       const appError = handleServiceError(err, 'loadHistory');
-      setError(appError.message);
+
+      // Enhanced error handling with specific messages
+      if (appError.code === 'UNAUTHORIZED') {
+        setError(intl.formatMessage({
+          id: 'history.error.unauthorized',
+          defaultMessage: 'Authentication failed. Please log in again to view your message history.'
+        }));
+      } else if (appError.code === 'FORBIDDEN') {
+        setError(intl.formatMessage({
+          id: 'history.error.forbidden',
+          defaultMessage: 'You do not have permission to view message history. Please contact support.'
+        }));
+      } else if (appError.code === 'NETWORK_ERROR') {
+        setError(intl.formatMessage({
+          id: 'history.error.network',
+          defaultMessage: 'Network connection failed. Please check your internet connection and try again.'
+        }));
+      } else if (appError.code === 'NOT_FOUND') {
+        setError(intl.formatMessage({
+          id: 'history.error.not_found',
+          defaultMessage: 'Message history data not found. You may not have any message logs yet.'
+        }));
+      } else {
+        setError(intl.formatMessage({
+          id: 'history.error.generic',
+          defaultMessage: 'Failed to load message history: {errorMessage}',
+        }, { errorMessage: appError.message }));
+      }
     } finally {
       setIsLoading(false);
     }
@@ -334,7 +419,20 @@ export function HistoryPage() {
   }
 
   if (error) {
-    return <ErrorScreen error={error} onRetry={loadData} />;
+    return (
+      <ErrorScreen
+        error={error}
+        onRetry={loadData}
+        retryButtonText={intl.formatMessage({
+          id: 'history.error.retry_button',
+          defaultMessage: 'Reload Message History'
+        })}
+        additionalHelp={intl.formatMessage({
+          id: 'history.error.additional_help',
+          defaultMessage: 'If the problem persists, please check your internet connection or try again later.'
+        })}
+      />
+    );
   }
 
   return (

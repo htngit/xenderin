@@ -6,6 +6,21 @@ export interface JobData {
     contacts: any[];
     template: any;
     assets?: string[];
+    delayConfig?: {
+        mode: 'static' | 'dynamic';
+        delayRange: number[];
+    };
+}
+
+export interface MessageLog {
+    id: string;
+    activity_log_id: string;
+    contact_id: string;
+    contact_name: string;
+    contact_phone: string;
+    status: 'sent' | 'failed' | 'pending';
+    sent_at?: string;
+    error_message?: string;
 }
 
 export class MessageProcessor {
@@ -44,6 +59,9 @@ export class MessageProcessor {
         let processed = 0;
         let success = 0;
         let failed = 0;
+        
+        // Array to store individual message logs for metadata
+        const messageLogs: MessageLog[] = [];
 
         // Report initial status
         this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, 'processing');
@@ -85,9 +103,32 @@ export class MessageProcessor {
                     await this.whatsappManager.sendMessage(contact.phone, messageContent);
                 }
 
+                // Create successful message log
+                messageLogs.push({
+                    id: crypto.randomUUID(),
+                    activity_log_id: job.jobId,
+                    contact_id: contact.id || '',
+                    contact_name: contact.name || contact.contact_name || 'Unknown Contact',
+                    contact_phone: contact.phone || contact.contact_phone || 'Unknown Phone',
+                    status: 'sent',
+                    sent_at: new Date().toISOString()
+                });
+
                 success++;
             } catch (error) {
                 console.error(`[MessageProcessor] Failed to send to ${contact.phone}:`, error);
+
+                // Create failed message log
+                messageLogs.push({
+                    id: crypto.randomUUID(),
+                    activity_log_id: job.jobId,
+                    contact_id: contact.id || '',
+                    contact_name: contact.name || contact.contact_name || 'Unknown Contact',
+                    contact_phone: contact.phone || contact.contact_phone || 'Unknown Phone',
+                    status: 'failed',
+                    sent_at: new Date().toISOString(),
+                    error_message: error instanceof Error ? error.message : String(error)
+                });
 
                 // Send detailed error to renderer
                 if (this.mainWindow) {
@@ -104,16 +145,18 @@ export class MessageProcessor {
             processed++;
             this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, 'processing');
 
-            // Random delay to prevent ban (2-5 seconds)
-            // TODO: Make this configurable from settings
-            await this.delay(2000 + Math.random() * 3000);
+            // Apply configurable delay based on user settings
+            const delayMs = this.calculateDelayFromConfig(job.delayConfig);
+            await this.delay(delayMs);
         }
 
         this.isProcessing = false;
         this.currentJob = null;
 
-        // Final report
-        this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, 'completed');
+        // Final report with message logs metadata
+        this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, 'completed', {
+            logs: messageLogs
+        });
         console.log(`[MessageProcessor] Job ${job.jobId} completed`);
     }
 
@@ -190,7 +233,8 @@ export class MessageProcessor {
         total: number,
         success: number,
         failed: number,
-        status: 'pending' | 'processing' | 'completed' | 'failed' | 'paused'
+        status: 'pending' | 'processing' | 'completed' | 'failed' | 'paused',
+        metadata?: Record<string, any>
     ) {
         if (this.mainWindow) {
             this.mainWindow.webContents.send('whatsapp:job-progress', {
@@ -199,9 +243,56 @@ export class MessageProcessor {
                 total,
                 success,
                 failed,
-                status
+                status,
+                metadata
             });
         }
+    }
+
+    /**
+     * Calculate delay in milliseconds based on delay configuration
+     * @param delayConfig - Optional delay configuration from job settings
+     * @returns Delay in milliseconds
+     */
+    private calculateDelayFromConfig(delayConfig?: {
+        mode: 'static' | 'dynamic';
+        delayRange: number[];
+    }): number {
+        // Default fallback values (2-5 seconds in milliseconds)
+        const DEFAULT_MIN_DELAY_MS = 2000;
+        const DEFAULT_MAX_DELAY_MS = 5000;
+
+        // Handle missing or invalid delay configuration
+        if (!delayConfig || !delayConfig.delayRange || delayConfig.delayRange.length === 0) {
+            console.warn('[MessageProcessor] No valid delayConfig provided, using default values');
+            return DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
+        }
+
+        // Validate delay range
+        if (delayConfig.delayRange.length < 1) {
+            console.warn('[MessageProcessor] Invalid delayRange, using default values');
+            return DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
+        }
+
+        // Convert seconds to milliseconds
+        const minDelayMs = delayConfig.delayRange[0] * 1000;
+        let maxDelayMs = minDelayMs; // Default to static mode
+
+        // For dynamic mode with valid range, use random value between min and max
+        if (delayConfig.mode === 'dynamic' && delayConfig.delayRange.length >= 2) {
+            maxDelayMs = delayConfig.delayRange[1] * 1000;
+
+            // Ensure max is greater than min
+            if (maxDelayMs <= minDelayMs) {
+                console.warn('[MessageProcessor] Invalid delay range (max <= min), using static mode');
+                return minDelayMs;
+            }
+
+            return minDelayMs + Math.random() * (maxDelayMs - minDelayMs);
+        }
+
+        // For static mode or dynamic mode with single value, return the min value
+        return minDelayMs;
     }
 
     private delay(ms: number) {

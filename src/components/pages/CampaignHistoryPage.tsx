@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useIntl } from 'react-intl';
 import { useServices } from '@/lib/services/ServiceContext';
 import { handleServiceError } from '@/lib/utils/errorHandling';
 import { ActivityLog } from '@/lib/services/types';
@@ -52,6 +53,7 @@ function CampaignHistoryPageContent({
     stats: any;
 }) {
     const navigate = useNavigate();
+    const intl = useIntl();
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -65,8 +67,16 @@ function CampaignHistoryPageContent({
                                 Back
                             </Button>
                             <div>
-                                <h1 className="text-3xl font-bold text-gray-900">Activity Logs</h1>
-                                <p className="text-gray-600">View your activity history</p>
+                                <div className="flex items-center space-x-2 mb-1">
+                                    <Calendar className="h-5 w-5 text-green-600" />
+                                    <h1 className="text-3xl font-bold text-gray-900">{intl.formatMessage({ id: 'history.campaign_history_title', defaultMessage: 'Campaign Activity Logs' })}</h1>
+                                </div>
+                                <p className="text-gray-600">{intl.formatMessage({ id: 'history.campaign_history_desc', defaultMessage: 'Summary records of your message sending campaigns and activities' })}</p>
+                                <div className="mt-2">
+                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                        {intl.formatMessage({ id: 'history.type_campaign', defaultMessage: 'Campaign Activities' })}
+                                    </Badge>
+                                </div>
                             </div>
                         </div>
                     </div>
