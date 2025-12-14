@@ -15,6 +15,9 @@ export class WhatsAppManager {
     private status: 'disconnected' | 'connecting' | 'ready' = 'disconnected';
     private messageReceiverWorker: MessageReceiverWorker | null = null;
 
+    // File cache to avoid re-downloading the same asset URL during a session
+    private fileCache: Map<string, string> = new Map();
+
     constructor(mainWindow: BrowserWindow) {
         this.mainWindow = mainWindow;
         this.initializeClient();
@@ -99,7 +102,13 @@ export class WhatsAppManager {
                         ? path.join(app.getPath('userData'), '.wwebjs_auth')
                         : '.wwebjs_auth'
                 }),
-                puppeteer: puppeteerConfig
+                puppeteer: puppeteerConfig,
+                // Fix for "Cannot read properties of undefined (reading 'VERSION')" error
+                // This tells the library to fetch the latest WhatsApp Web version from a remote cache
+                webVersionCache: {
+                    type: 'remote',
+                    remotePath: 'https://raw.githubusercontent.com/AntoniaSaGe/AntoniaSaGe/main/whatsapp-web-version'
+                }
             });
 
             this.setupEventHandlers();
@@ -142,7 +151,15 @@ export class WhatsAppManager {
         // Authenticated event
         this.client.on('authenticated', () => {
             console.log('[WhatsAppManager] Client authenticated');
-            // Don't change status here, wait for 'ready' event
+            // Some whatsapp-web.js versions don't fire 'ready' properly with webVersionCache
+            // Set a fallback timeout to force 'ready' status
+            setTimeout(() => {
+                if (this.status !== 'ready') {
+                    console.log('[WhatsAppManager] Fallback: Setting status to ready after authentication');
+                    this.status = 'ready';
+                    this.broadcastStatus('ready');
+                }
+            }, 5000); // 5 second fallback
         });
 
         // Authentication failure event
@@ -248,6 +265,9 @@ export class WhatsAppManager {
             this.status = 'disconnected';
             this.broadcastStatus('disconnected');
 
+            // Clear file cache on disconnect
+            this.clearFileCache();
+
             // Re-initialize client so it can be connected again
             this.initializeClient();
         } catch (error) {
@@ -283,30 +303,59 @@ export class WhatsAppManager {
     }
 
     /**
-     * Download a file from URL to temporary directory
+     * Download a file from URL to temporary directory with retry mechanism and caching
      * @param url - URL of the file to download
+     * @param maxRetries - Maximum number of retries (default: 3)
      * @returns Path to the downloaded file
      */
-    private async downloadFile(url: string): Promise<string> {
+    private async downloadFile(url: string, maxRetries = 3): Promise<string> {
+        // Check cache first
+        const cachedPath = this.fileCache.get(url);
+        if (cachedPath && fs.existsSync(cachedPath)) {
+            console.log(`[WhatsAppManager] Using cached file for: ${url}`);
+            return cachedPath;
+        }
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const filePath = await this._downloadFileInternal(url);
+                // Cache the downloaded file path
+                this.fileCache.set(url, filePath);
+                console.log(`[WhatsAppManager] File cached for URL: ${url}`);
+                return filePath;
+            } catch (error) {
+                console.warn(`[WhatsAppManager] Download attempt ${attempt + 1}/${maxRetries} failed:`, error);
+                if (attempt === maxRetries - 1) throw error;
+                // Exponential backoff: 1s, 2s, 4s...
+                await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            }
+        }
+        throw new Error(`Failed to download file after ${maxRetries} attempts`);
+    }
+
+    /**
+     * Internal implementation of file download
+     */
+    private async _downloadFileInternal(url: string): Promise<string> {
         const https = await import('https');
         const http = await import('http');
-        const fs = await import('fs');
-        const path = await import('path');
+        const fsAsync = await import('fs');
+        const pathModule = await import('path');
         const os = await import('os');
 
         return new Promise((resolve, reject) => {
             try {
                 // Generate temp file path
                 const tempDir = os.tmpdir();
-                const fileName = `whatsapp_media_${Date.now()}_${path.basename(url).split('?')[0]}`;
-                const tempFilePath = path.join(tempDir, fileName);
+                const fileName = `whatsapp_media_${Date.now()}_${pathModule.basename(url).split('?')[0]}`;
+                const tempFilePath = pathModule.join(tempDir, fileName);
 
                 console.log(`[WhatsAppManager] Downloading to: ${tempFilePath}`);
 
                 // Choose http or https based on URL
                 const client = url.startsWith('https://') ? https : http;
 
-                const file = fs.createWriteStream(tempFilePath);
+                const file = fsAsync.createWriteStream(tempFilePath);
 
                 client.get(url, (response) => {
                     if (response.statusCode !== 200) {
@@ -323,17 +372,35 @@ export class WhatsAppManager {
                     });
 
                     file.on('error', (err) => {
-                        fs.unlink(tempFilePath, () => { }); // Delete the file on error
+                        fsAsync.unlink(tempFilePath, () => { }); // Delete the file on error
                         reject(err);
                     });
                 }).on('error', (err) => {
-                    fs.unlink(tempFilePath, () => { }); // Delete the file on error
+                    fsAsync.unlink(tempFilePath, () => { }); // Delete the file on error
                     reject(err);
                 });
             } catch (error) {
                 reject(error);
             }
         });
+    }
+
+    /**
+     * Clear the file cache and delete cached files
+     */
+    clearFileCache(): void {
+        console.log(`[WhatsAppManager] Clearing file cache (${this.fileCache.size} files)`);
+        for (const [url, filePath] of this.fileCache.entries()) {
+            try {
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[WhatsAppManager] Deleted cached file: ${filePath}`);
+                }
+            } catch (error) {
+                console.warn(`[WhatsAppManager] Failed to delete cached file: ${filePath}`, error);
+            }
+        }
+        this.fileCache.clear();
     }
 
     /**
@@ -372,8 +439,6 @@ export class WhatsAppManager {
         content: string,
         mediaPath: string
     ): Promise<boolean> {
-        let tempFilePath: string | null = null;
-
         try {
             if (!this.client || this.status !== 'ready') {
                 throw new Error('WhatsApp client is not ready');
@@ -384,35 +449,32 @@ export class WhatsAppManager {
             console.log(`[WhatsAppManager] Sending media message to ${to} (formatted: ${chatId})`);
 
             let media: MessageMedia;
+            let localFilePath: string;
 
             // Check if mediaPath is a URL
             if (mediaPath.startsWith('http://') || mediaPath.startsWith('https://')) {
                 console.log(`[WhatsAppManager] Downloading remote file: ${mediaPath}`);
-                tempFilePath = await this.downloadFile(mediaPath);
-                media = MessageMedia.fromFilePath(tempFilePath);
+                // downloadFile now uses cache internally - no need to manage cleanup here for cached files
+                localFilePath = await this.downloadFile(mediaPath);
+                media = MessageMedia.fromFilePath(localFilePath);
             } else {
                 // Local file path
+                localFilePath = mediaPath;
                 media = MessageMedia.fromFilePath(mediaPath);
             }
 
             await this.client.sendMessage(chatId, media, { caption: content });
             console.log(`[WhatsAppManager] Media message sent successfully to ${to}`);
 
+            // Note: We don't clean up cached files here - they will be cleaned when:
+            // 1. Job completes (MessageProcessor should call clearFileCache)
+            // 2. Client disconnects
+            // 3. App closes
+
             return true;
         } catch (error) {
             console.error('[WhatsAppManager] Send media message error:', error);
             throw error;
-        } finally {
-            // Clean up temp file if it was created
-            if (tempFilePath) {
-                try {
-                    const fs = await import('fs');
-                    fs.unlinkSync(tempFilePath);
-                    console.log(`[WhatsAppManager] Cleaned up temp file: ${tempFilePath}`);
-                } catch (cleanupError) {
-                    console.warn(`[WhatsAppManager] Failed to clean up temp file: ${tempFilePath}`, cleanupError);
-                }
-            }
         }
     }
 

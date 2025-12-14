@@ -18,6 +18,7 @@ import { AnimatedButton } from '@/components/ui/animated-button';
 import { AnimatedCard } from '@/components/ui/animated-card';
 import { FadeIn } from '@/components/ui/animations';
 import { Contact, Template, Quota, ContactGroup, AssetFile } from '@/lib/services/types';
+import { preflightService } from '@/lib/services/PreflightService';
 import { JobProgressModal } from '@/components/ui/JobProgressModal';
 import { toast } from 'sonner';
 import {
@@ -38,6 +39,8 @@ import {
 } from 'lucide-react';
 
 const PRESET_DELAYS = [1, 3, 5, 10, 15, 30, 60, 120, 300, 600, 900];
+
+type SendFlowState = 'idle' | 'validating' | 'ready' | 'sending' | 'done' | 'error';
 
 const formatDelayLabel = (seconds: number) => {
   if (seconds >= 60) {
@@ -76,7 +79,9 @@ function SendPageContent({
   formatFileSize,
   showProgressModal,
   setShowProgressModal,
-  activeJobId
+  activeJobId,
+  flowState,
+  validationErrors
 }: {
   contacts: Contact[];
   templates: Template[];
@@ -107,6 +112,8 @@ function SendPageContent({
   showProgressModal: boolean;
   setShowProgressModal: (show: boolean) => void;
   activeJobId: string | null;
+  flowState: SendFlowState;
+  validationErrors: string[];
 }) {
   const navigate = useNavigate();
   const intl = useIntl();
@@ -515,12 +522,17 @@ function SendPageContent({
                     className="w-full"
                     size="lg"
                     onClick={handleStartCampaign}
-                    disabled={!canSend || isSending}
+                    disabled={!canSend || isSending || flowState === 'validating'}
                   >
                     {isSending ? (
                       <>
                         <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
                         {intl.formatMessage({ id: 'send.button.sending', defaultMessage: 'Sending...' })}
+                      </>
+                    ) : flowState === 'validating' ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                        Validating...
                       </>
                     ) : (
                       <>
@@ -530,7 +542,20 @@ function SendPageContent({
                     )}
                   </AnimatedButton>
 
-                  {!canSend && (
+                  {validationErrors.length > 0 && (
+                    <Alert variant="destructive" className="mt-3">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <ul className="list-disc pl-4">
+                          {validationErrors.map((err, idx) => (
+                            <li key={idx}>{err}</li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {!canSend && flowState !== 'validating' && validationErrors.length === 0 && (
                     <Alert className="mt-3">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>
@@ -641,6 +666,11 @@ export function SendPage() {
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [reservationId, setReservationId] = useState<string | null>(null);
+
+  // New State Machine
+  const [flowState, setFlowState] = useState<SendFlowState>('idle');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
   const intl = useIntl();
 
   const loadData = async () => {
@@ -671,9 +701,29 @@ export function SendPage() {
       console.error('Failed to load data:', err);
       const appError = handleServiceError(err, 'loadSendData');
       setError(appError.message);
+      setFlowState('error');
     } finally {
       setIsLoading(false);
+      // If no error, set state to ready (or idle if nothing selected)
+      if (!error) setFlowState('ready');
     }
+  };
+
+  // Effect to validate when template changes
+  useEffect(() => {
+    if (selectedTemplate) {
+      validateTemplateSync(selectedTemplate);
+    }
+  }, [selectedTemplate]);
+
+  const validateTemplateSync = async (templateId: string) => {
+    setFlowState('validating');
+    const isSynced = await preflightService.ensureTemplateSync(templateId);
+    if (!isSynced) {
+      toast.warning('Template might be out of sync. Please refresh.');
+      // We don't block yet, but we warn
+    }
+    setFlowState('ready');
   };
 
   const getTargetContacts = () => {
@@ -731,6 +781,38 @@ export function SendPage() {
 
     if (!selectedTemplateData) return;
 
+    // --- PRE-FLIGHT VALIDATION CALL ---
+    setFlowState('validating');
+    try {
+      const preflight = await preflightService.validateSendReadiness({
+        templateId: selectedTemplate,
+        assetIds: selectedAssets,
+        contactCount: targetContacts.length,
+        checkQuota: true
+      });
+
+      if (!preflight.isReady) {
+        setValidationErrors(preflight.errors.map(e => e.message));
+        toast.error('Validation failed: ' + preflight.errors[0].message);
+        setFlowState('ready'); // Back to ready state to let user fix
+        return;
+      }
+
+      // Additional: Ensure assets are ready (pre-download/check)
+      if (selectedAssets.length > 0) {
+        const assetsReady = await preflightService.ensureAssetsReady(selectedAssets);
+        if (!assetsReady) {
+          throw new Error('Some assets could not be prepared for sending. Please try again.');
+        }
+      }
+    } catch (valError) {
+      console.error('Preflight error:', valError);
+      toast.error('Pre-flight check failed: ' + (valError instanceof Error ? valError.message : 'Unknown error'));
+      setFlowState('error');
+      return;
+    }
+
+    setFlowState('sending');
     setIsSending(true);
     setSendResult(null);
 
@@ -993,6 +1075,8 @@ export function SendPage() {
       showProgressModal={showProgressModal}
       setShowProgressModal={setShowProgressModal}
       activeJobId={activeJobId}
+      flowState={flowState}
+      validationErrors={validationErrors}
     />
   );
 }

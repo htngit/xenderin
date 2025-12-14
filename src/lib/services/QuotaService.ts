@@ -939,3 +939,6 @@ export class QuotaService {
    * Cancel reservation with the new interface
    */
 }
+
+// Create a singleton instance
+export const quotaService = new QuotaService();

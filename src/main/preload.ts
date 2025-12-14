@@ -49,8 +49,15 @@ contextBridge.exposeInMainWorld('electron', {
         getClientInfo: () => ipcRenderer.invoke('whatsapp:get-client-info'),
 
         // Job processing methods (for Week 3)
-        processJob: (jobId: string, contacts: any[], template: any, assets?: string[]) =>
-            ipcRenderer.invoke('whatsapp:process-job', { jobId, contacts, template, assets }),
+        // Updated to accept options object from SendPage: { template, assets, mode, delayRange }
+        processJob: (jobId: string, contacts: any[], options: { template: any; assets?: string[]; mode?: string; delayRange?: number[] }) =>
+            ipcRenderer.invoke('whatsapp:process-job', {
+                jobId,
+                contacts,
+                template: options.template,  // Extract template from options
+                assets: options.assets,
+                delayConfig: { mode: options.mode, delayRange: options.delayRange }
+            }),
 
         pauseJob: (jobId: string) =>
             ipcRenderer.invoke('whatsapp:pause-job', { jobId }),

@@ -46,6 +46,29 @@ export class MessageProcessor {
      * Process a bulk message job
      */
     async processJob(job: JobData) {
+        // Debug: Log received template data
+        console.log('[MessageProcessor] Received job template:', JSON.stringify(job.template, null, 2));
+
+        // Validate template before processing
+        if (!job.template) {
+            throw new Error('Template is required for job processing');
+        }
+
+        // Check for content OR variants
+        const hasContent = job.template.content && job.template.content.trim().length > 0;
+        const hasVariants = Array.isArray(job.template.variants) && job.template.variants.length > 0;
+
+        console.log(`[MessageProcessor] Template check - hasContent: ${hasContent}, hasVariants: ${hasVariants}`);
+
+        if (!hasContent && !hasVariants) {
+            console.error('[MessageProcessor] Template validation failed:', {
+                content: job.template.content,
+                variants: job.template.variants,
+                templateKeys: Object.keys(job.template)
+            });
+            throw new Error(`Template must have content or variants defined. Received: content=${job.template.content}, variants=${JSON.stringify(job.template.variants)}`);
+        }
+
         if (this.isProcessing) {
             throw new Error('Already processing a job');
         }
@@ -59,7 +82,7 @@ export class MessageProcessor {
         let processed = 0;
         let success = 0;
         let failed = 0;
-        
+
         // Array to store individual message logs for metadata
         const messageLogs: MessageLog[] = [];
 

@@ -1,1 +1,1108 @@
-"use strict";var x=Object.create;var E=Object.defineProperty;var q=Object.getOwnPropertyDescriptor;var T=Object.getOwnPropertyNames;var J=Object.getPrototypeOf,z=Object.prototype.hasOwnProperty;var j=(o,e,t)=>e in o?E(o,e,{enumerable:!0,configurable:!0,writable:!0,value:t}):o[e]=t;var N=(o,e,t,n)=>{if(e&&typeof e=="object"||typeof e=="function")for(let s of T(e))!z.call(o,s)&&s!==t&&E(o,s,{get:()=>e[s],enumerable:!(n=q(e,s))||n.enumerable});return o};var y=(o,e,t)=>(t=o!=null?x(J(o)):{},N(e||!o||!o.__esModule?E(t,"default",{value:o,enumerable:!0}):t,o));var l=(o,e,t)=>j(o,typeof e!="symbol"?e+"":e,t);const c=require("electron"),m=require("path"),I=require("fs"),P=require("whatsapp-web.js"),Q=require("qrcode-terminal");function H(o){const e=Object.create(null,{[Symbol.toStringTag]:{value:"Module"}});if(o){for(const t in o)if(t!=="default"){const n=Object.getOwnPropertyDescriptor(o,t);Object.defineProperty(e,t,n.get?n:{enumerable:!0,get:()=>o[t]})}}return e.default=o,Object.freeze(e)}const O=H(Q);class D{constructor(e){l(this,"client",null);l(this,"mainWindow",null);l(this,"status","disconnected");l(this,"messageReceiverWorker",null);this.mainWindow=e,this.initializeClient()}setMessageReceiverWorker(e){this.messageReceiverWorker=e}getChromiumExecutablePath(){if(!c.app.isPackaged)return;const e=m.join(process.resourcesPath,"app.asar.unpacked","node_modules","whatsapp-web.js","node_modules","puppeteer-core",".local-chromium","win64-1045629","chrome-win","chrome.exe");if(console.log("[WhatsAppManager] Checking Chromium path:",e),I.existsSync(e))return console.log("[WhatsAppManager] Chromium found at:",e),e;console.error("[WhatsAppManager] Chromium not found at expected path:",e)}initializeClient(){try{console.log("[WhatsAppManager] Initializing client...");const e=this.getChromiumExecutablePath(),t={headless:!0,args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-accelerated-2d-canvas","--no-first-run","--no-zygote","--disable-gpu"]};e&&(t.executablePath=e),console.log("[WhatsAppManager] Puppeteer config:",JSON.stringify(t,null,2)),this.client=new P.Client({authStrategy:new P.LocalAuth({dataPath:c.app.isPackaged?m.join(c.app.getPath("userData"),".wwebjs_auth"):".wwebjs_auth"}),puppeteer:t}),this.setupEventHandlers()}catch(e){console.error("[WhatsAppManager] Error initializing client:",e),this.status="disconnected",this.broadcastStatus("disconnected")}}setupEventHandlers(){this.client&&(this.client.on("qr",e=>{console.log("[WhatsAppManager] QR Code received"),O.generate(e,{small:!0}),this.mainWindow&&this.mainWindow.webContents.send("whatsapp:qr-code",e),this.status="connecting",this.broadcastStatus("connecting")}),this.client.on("ready",()=>{console.log("[WhatsAppManager] Client is ready!"),this.status="ready",this.broadcastStatus("ready")}),this.client.on("authenticated",()=>{console.log("[WhatsAppManager] Client authenticated")}),this.client.on("auth_failure",e=>{console.error("[WhatsAppManager] Authentication failed:",e),this.status="disconnected",this.broadcastStatus("disconnected"),this.mainWindow&&this.mainWindow.webContents.send("whatsapp:error",{type:"auth_failure",message:"Authentication failed. Please try again."})}),this.client.on("disconnected",e=>{console.log("[WhatsAppManager] Client disconnected:",e),this.status="disconnected",this.broadcastStatus("disconnected")}),this.client.on("loading_screen",(e,t)=>{console.log(`[WhatsAppManager] Loading... ${e}% - ${t}`)}),this.client.on("message",async e=>{console.log("[WhatsAppManager] Message received:",e.from),this.messageReceiverWorker?await this.messageReceiverWorker.handleIncomingMessage(e):this.mainWindow&&this.mainWindow.webContents.send("whatsapp:message-received",{id:e.id._serialized,from:e.from,to:e.to,body:e.body,type:e.type,timestamp:e.timestamp,hasMedia:e.hasMedia})}))}async connect(){try{if(console.log("[WhatsAppManager] Connecting..."),!this.client)throw new Error("Client not initialized");return this.status==="ready"?(console.log("[WhatsAppManager] Already connected"),!0):(this.status="connecting",this.broadcastStatus("connecting"),await this.client.initialize(),!0)}catch(e){throw console.error("[WhatsAppManager] Connection error:",e),this.status="disconnected",this.broadcastStatus("disconnected"),this.mainWindow&&this.mainWindow.webContents.send("whatsapp:error",{type:"connection_error",message:e instanceof Error?e.message:"Unknown connection error"}),e}}async disconnect(){try{console.log("[WhatsAppManager] Disconnecting..."),this.client&&(await this.client.destroy(),this.client=null),this.status="disconnected",this.broadcastStatus("disconnected"),this.initializeClient()}catch(e){throw console.error("[WhatsAppManager] Disconnect error:",e),this.status="disconnected",this.broadcastStatus("disconnected"),e}}formatPhoneNumber(e){let t=e.replace(/\D/g,"");return t.startsWith("0")&&(t="62"+t.slice(1)),t.endsWith("@c.us")||(t+="@c.us"),t}async downloadFile(e){const t=await import("https"),n=await import("http"),s=await import("fs"),r=await import("path"),i=await import("os");return new Promise((a,d)=>{try{const h=i.tmpdir(),p=`whatsapp_media_${Date.now()}_${r.basename(e).split("?")[0]}`,f=r.join(h,p);console.log(`[WhatsAppManager] Downloading to: ${f}`);const U=e.startsWith("https://")?t:n,b=s.createWriteStream(f);U.get(e,W=>{if(W.statusCode!==200){d(new Error(`Failed to download file: HTTP ${W.statusCode}`));return}W.pipe(b),b.on("finish",()=>{b.close(),console.log(`[WhatsAppManager] Download complete: ${f}`),a(f)}),b.on("error",L=>{s.unlink(f,()=>{}),d(L)})}).on("error",W=>{s.unlink(f,()=>{}),d(W)})}catch(h){d(h)}})}async sendMessage(e,t){try{if(!this.client||this.status!=="ready")throw new Error("WhatsApp client is not ready");const n=this.formatPhoneNumber(e);return console.log(`[WhatsAppManager] Sending message to ${e} (formatted: ${n})`),await this.client.sendMessage(n,t),console.log(`[WhatsAppManager] Message sent successfully to ${e}`),!0}catch(n){throw console.error("[WhatsAppManager] Send message error:",n),n}}async sendMessageWithMedia(e,t,n){let s=null;try{if(!this.client||this.status!=="ready")throw new Error("WhatsApp client is not ready");const r=this.formatPhoneNumber(e);console.log(`[WhatsAppManager] Sending media message to ${e} (formatted: ${r})`);let i;return n.startsWith("http://")||n.startsWith("https://")?(console.log(`[WhatsAppManager] Downloading remote file: ${n}`),s=await this.downloadFile(n),i=P.MessageMedia.fromFilePath(s)):i=P.MessageMedia.fromFilePath(n),await this.client.sendMessage(r,i,{caption:t}),console.log(`[WhatsAppManager] Media message sent successfully to ${e}`),!0}catch(r){throw console.error("[WhatsAppManager] Send media message error:",r),r}finally{if(s)try{(await import("fs")).unlinkSync(s),console.log(`[WhatsAppManager] Cleaned up temp file: ${s}`)}catch(r){console.warn(`[WhatsAppManager] Failed to clean up temp file: ${s}`,r)}}}getStatus(){return this.status}isReady(){return this.status==="ready"&&this.client!==null}broadcastStatus(e){this.mainWindow&&!this.mainWindow.isDestroyed()&&this.mainWindow.webContents.send("whatsapp:status-change",e)}async getClientInfo(){try{if(!this.client||this.status!=="ready")return null;const e=this.client.info;return{wid:e.wid._serialized,pushname:e.pushname,platform:e.platform}}catch(e){return console.error("[WhatsAppManager] Get client info error:",e),null}}}class F{constructor(e,t){l(this,"whatsappManager");l(this,"mainWindow");l(this,"isProcessing",!1);l(this,"isPaused",!1);l(this,"currentJob",null);this.whatsappManager=e,this.mainWindow=t}getCurrentJob(){return this.currentJob}async processJob(e){var i;if(this.isProcessing)throw new Error("Already processing a job");this.isProcessing=!0,this.currentJob=e,this.isPaused=!1,console.log(`[MessageProcessor] Starting job ${e.jobId} with ${e.contacts.length} contacts`);let t=0,n=0,s=0;const r=[];this.reportProgress(e.jobId,t,e.contacts.length,n,s,"processing");for(const a of e.contacts){if(this.isPaused&&(this.reportProgress(e.jobId,t,e.contacts.length,n,s,"paused"),await this.waitForResume(),this.reportProgress(e.jobId,t,e.contacts.length,n,s,"processing")),!this.isProcessing)break;try{let h=e.template.content||"";if(e.template.variants&&e.template.variants.length>0){const f=Math.floor(Math.random()*e.template.variants.length);h=e.template.variants[f]}const p=this.formatMessage(h,a);console.log(`[MessageProcessor] Template has ${((i=e.template.variants)==null?void 0:i.length)||0} variants`),console.log(`[MessageProcessor] Selected template content: "${h}"`),console.log(`[MessageProcessor] Formatted message: "${p}"`),console.log(`[MessageProcessor] Has assets: ${e.assets&&e.assets.length>0}`),e.assets&&e.assets.length>0?await this.whatsappManager.sendMessageWithMedia(a.phone,p,e.assets[0]):await this.whatsappManager.sendMessage(a.phone,p),r.push({id:crypto.randomUUID(),activity_log_id:e.jobId,contact_id:a.id||"",contact_name:a.name||a.contact_name||"Unknown Contact",contact_phone:a.phone||a.contact_phone||"Unknown Phone",status:"sent",sent_at:new Date().toISOString()}),n++}catch(h){console.error(`[MessageProcessor] Failed to send to ${a.phone}:`,h),r.push({id:crypto.randomUUID(),activity_log_id:e.jobId,contact_id:a.id||"",contact_name:a.name||a.contact_name||"Unknown Contact",contact_phone:a.phone||a.contact_phone||"Unknown Phone",status:"failed",sent_at:new Date().toISOString(),error_message:h instanceof Error?h.message:String(h)}),this.mainWindow&&this.mainWindow.webContents.send("whatsapp:job-error-detail",{jobId:e.jobId,phone:a.phone,error:h instanceof Error?h.message:String(h)}),s++}t++,this.reportProgress(e.jobId,t,e.contacts.length,n,s,"processing");const d=this.calculateDelayFromConfig(e.delayConfig);await this.delay(d)}this.isProcessing=!1,this.currentJob=null,this.reportProgress(e.jobId,t,e.contacts.length,n,s,"completed",{logs:r}),console.log(`[MessageProcessor] Job ${e.jobId} completed`)}pause(){return this.isProcessing&&!this.isPaused?(this.isPaused=!0,console.log("[MessageProcessor] Job paused"),!0):!1}resume(){return this.isProcessing&&this.isPaused?(this.isPaused=!1,console.log("[MessageProcessor] Job resumed"),!0):!1}stop(){return this.isProcessing?(this.isProcessing=!1,this.isPaused=!1,this.currentJob=null,console.log("[MessageProcessor] Job stopped"),!0):!1}formatMessage(e,t){let n=e;n=n.replace(/{{name}}/g,t.name||""),n=n.replace(/{{phone}}/g,t.phone||"");const s=n.match(/{{(.*?)}}/g);return s&&s.forEach(r=>{const i=r.replace(/{{|}}/g,"");t[i]!==void 0&&(n=n.replace(new RegExp(r,"g"),String(t[i])))}),n}reportProgress(e,t,n,s,r,i,a){this.mainWindow&&this.mainWindow.webContents.send("whatsapp:job-progress",{jobId:e,processed:t,total:n,success:s,failed:r,status:i,metadata:a})}calculateDelayFromConfig(e){if(!e||!e.delayRange||e.delayRange.length===0)return console.warn("[MessageProcessor] No valid delayConfig provided, using default values"),2e3+Math.random()*3e3;if(e.delayRange.length<1)return console.warn("[MessageProcessor] Invalid delayRange, using default values"),2e3+Math.random()*3e3;const s=e.delayRange[0]*1e3;let r=s;return e.mode==="dynamic"&&e.delayRange.length>=2?(r=e.delayRange[1]*1e3,r<=s?(console.warn("[MessageProcessor] Invalid delay range (max <= min), using static mode"),s):s+Math.random()*(r-s)):s}delay(e){return new Promise(t=>setTimeout(t,e))}waitForResume(){return new Promise(e=>{const t=setInterval(()=>{this.isPaused||(clearInterval(t),e())},500)})}}class ${constructor(e){l(this,"queue",[]);l(this,"isRunning",!1);l(this,"messageProcessor");this.messageProcessor=e}async addToQueue(e){console.log(`[QueueWorker] Adding job ${e.jobId} to queue`),this.queue.push(e),this.processQueue()}async processQueue(){if(!this.isRunning){for(this.isRunning=!0,console.log("[QueueWorker] Starting queue processing");this.queue.length>0;){const e=this.queue.shift();if(e)try{console.log(`[QueueWorker] Processing job ${e.jobId}`),await this.messageProcessor.processJob(e)}catch(t){console.error(`[QueueWorker] Error processing job ${e.jobId}:`,t)}}this.isRunning=!1,console.log("[QueueWorker] Queue processing finished")}}getQueueLength(){return this.queue.length}}let u=null,w=null,_=null;const V=(o,e,t,n)=>{console.log("[IPC] Setting up IPC handlers..."),e?u=e:(console.log("[IPC] Creating new WhatsAppManager (Fallback)"),u=new D(o)),t?w=t:(console.log("[IPC] Creating new MessageProcessor (Fallback)"),w=new F(u,o)),n?_=n:w&&(console.log("[IPC] Creating new QueueWorker (Fallback)"),_=new $(w)),c.ipcMain.handle("whatsapp:connect",async()=>{try{if(console.log("[IPC] whatsapp:connect called"),!u)throw new Error("WhatsAppManager not initialized");return{success:!0,connected:await u.connect()}}catch(s){return console.error("[IPC] whatsapp:connect error:",s),{success:!1,error:s instanceof Error?s.message:"Unknown error"}}}),c.ipcMain.handle("whatsapp:disconnect",async()=>{try{if(console.log("[IPC] whatsapp:disconnect called"),!u)throw new Error("WhatsAppManager not initialized");return await u.disconnect(),{success:!0}}catch(s){return console.error("[IPC] whatsapp:disconnect error:",s),{success:!1,error:s instanceof Error?s.message:"Unknown error"}}}),c.ipcMain.handle("whatsapp:send-message",async(s,{to:r,content:i,assets:a})=>{try{if(console.log(`[IPC] whatsapp:send-message called for ${r}`),!u)throw new Error("WhatsAppManager not initialized");let d;return a&&a.length>0?d=await u.sendMessageWithMedia(r,i,a[0]):d=await u.sendMessage(r,i),{success:d}}catch(d){return console.error("[IPC] whatsapp:send-message error:",d),{success:!1,error:d instanceof Error?d.message:"Unknown error"}}}),c.ipcMain.handle("whatsapp:get-status",async()=>{try{if(!u)return{status:"disconnected",ready:!1};const s=u.getStatus(),r=u.isReady();return{status:s,ready:r}}catch(s){return console.error("[IPC] whatsapp:get-status error:",s),{status:"disconnected",ready:!1}}}),c.ipcMain.handle("whatsapp:get-client-info",async()=>{try{return console.log("[IPC] whatsapp:get-client-info called"),u?await u.getClientInfo():null}catch(s){return console.error("[IPC] whatsapp:get-client-info error:",s),null}}),c.ipcMain.handle("whatsapp:process-job",async(s,{jobId:r,contacts:i,template:a,assets:d,delayConfig:h})=>{try{if(console.log(`[IPC] whatsapp:process-job called for job ${r}`),!u||!u.isReady())throw new Error("WhatsApp is not ready");if(_)console.log(`[IPC] Adding job ${r} to queue`),_.addToQueue({jobId:r,contacts:i,template:a,assets:d,delayConfig:h}).catch(p=>{console.error("[IPC] Error adding to queue:",p)});else if(w)console.warn("[IPC] QueueWorker not available, processing directly"),w.processJob({jobId:r,contacts:i,template:a,assets:d,delayConfig:h}).catch(p=>{console.error("[IPC] Job processing error:",p)});else throw new Error("MessageProcessor not initialized");return{success:!0,message:"Job started",jobId:r}}catch(p){return console.error("[IPC] whatsapp:process-job error:",p),{success:!1,error:p instanceof Error?p.message:"Unknown error"}}}),c.ipcMain.handle("whatsapp:pause-job",async(s,{jobId:r})=>{if(console.log(`[IPC] whatsapp:pause-job called for job ${r}`),w){const i=w.pause();return{success:i,message:i?"Job paused":"Failed to pause"}}return{success:!1,message:"Processor not ready"}}),c.ipcMain.handle("whatsapp:resume-job",async(s,{jobId:r})=>{if(console.log(`[IPC] whatsapp:resume-job called for job ${r}`),w){const i=w.resume();return{success:i,message:i?"Job resumed":"Failed to resume"}}return{success:!1,message:"Processor not ready"}}),console.log("[IPC] IPC handlers setup complete")};class Y{constructor(e,t){l(this,"whatsappManager");l(this,"mainWindow");l(this,"checkInterval",null);l(this,"CHECK_INTERVAL_MS",18e4);this.whatsappManager=e,this.mainWindow=t}startMonitoring(){this.checkInterval||(console.log("[StatusWorker] Starting status monitoring"),this.checkHealth(),this.checkInterval=setInterval(async()=>{await this.checkHealth()},this.CHECK_INTERVAL_MS))}stopMonitoring(){this.checkInterval&&(clearInterval(this.checkInterval),this.checkInterval=null,console.log("[StatusWorker] Stopped status monitoring"))}async checkHealth(){const e=this.whatsappManager.getStatus();if(console.log(`[StatusWorker] Health check: ${e}`),this.mainWindow&&!this.mainWindow.isDestroyed()&&this.mainWindow.webContents.send("whatsapp:status-change",e),e==="disconnected"){console.log("[StatusWorker] Detected disconnection, attempting reconnect...");try{await this.whatsappManager.connect()}catch(t){console.error("[StatusWorker] Reconnect failed:",t)}}}}class K{constructor(e,t){l(this,"mainWindow");l(this,"unsubscribeKeywords",["unsubscribe","stop","batal","berhenti","jangan kirim","keluar","cancel"]);this.mainWindow=t}async handleIncomingMessage(e){try{console.log("[MessageReceiverWorker] Processing incoming message from:",e.from);const t=this.isUnsubscribeRequest(e.body);t&&(console.log("[MessageReceiverWorker] Unsubscribe request detected from:",e.from),this.mainWindow&&!this.mainWindow.isDestroyed()&&this.mainWindow.webContents.send("whatsapp:unsubscribe-detected",{phoneNumber:e.from,message:e.body,timestamp:new Date().toISOString()})),this.mainWindow&&!this.mainWindow.isDestroyed()&&this.mainWindow.webContents.send("whatsapp:message-received",{id:e.id._serialized,from:e.from,to:e.to,body:e.body,type:e.type,timestamp:e.timestamp,hasMedia:e.hasMedia,isUnsubscribeRequest:t})}catch(t){console.error("[MessageReceiverWorker] Error handling message:",t)}}isUnsubscribeRequest(e){if(!e)return!1;const t=e.toLowerCase();return this.unsubscribeKeywords.some(n=>t.includes(n))}}async function A(o){try{return await I.promises.access(o,I.constants.F_OK|I.constants.R_OK),!0}catch(e){return console.debug(`[Main] File does not exist or is not accessible: ${o}`,e),!1}}let g=null,M=null,k=null,v=null,C=null,S=null;const R=async()=>{let o;try{if(process.env.VITE_DEV_SERVER_URL){const e=m.join(__dirname,"../../public/icon.png");console.log("[Main] Development mode - trying icon path:",e),await A(e)?o=e:(console.warn("[Main] Development icon not found, falling back to default"),o=void 0)}else{const e=m.dirname(c.app.getAppPath()),t=m.join(e,"icon.ico");if(console.log("[Main] Production mode - trying icon path:",t),await A(t))o=t;else{const s=m.join(process.resourcesPath,"icon.ico");console.log("[Main] Fallback icon path:",s),o=await A(s)?s:void 0}}}catch(e){console.error("[Main] Error determining icon path:",e),o=void 0}try{if(g=new c.BrowserWindow({width:1200,height:800,autoHideMenuBar:!0,icon:o,webPreferences:{preload:m.join(__dirname,"preload.js"),nodeIntegration:!1,contextIsolation:!0,webSecurity:!0}}),process.platform==="win32"&&o)try{g.setIcon(o)}catch(e){console.error("[Main] Failed to set window icon:",e)}}catch(e){console.error("[Main] Failed to create browser window:",e),g=new c.BrowserWindow({width:1200,height:800,autoHideMenuBar:!0,webPreferences:{preload:m.join(__dirname,"preload.js"),nodeIntegration:!1,contextIsolation:!0,webSecurity:!0}})}if(console.log("[Main] Initializing workers..."),M=new D(g),k=new F(M,g),v=new $(k),C=new Y(M,g),S=new K(M,g),M.setMessageReceiverWorker(S),C.startMonitoring(),V(g,M,k,v),process.env.VITE_DEV_SERVER_URL)g.loadURL(process.env.VITE_DEV_SERVER_URL);else{const e=m.join(c.app.getAppPath(),"dist","index.html");console.log("[Main] Loading from:",e),g.loadFile(e)}g.webContents.on("before-input-event",(e,t)=>{(t.key==="F5"||t.control&&t.key==="r")&&e.preventDefault()}),g.webContents.on("did-fail-load",(e,t,n)=>{console.error("[Main] Failed to load:",t,n)}),g.webContents.on("crashed",(e,t)=>{console.error("[Main] Renderer crashed:",t)})};c.app.whenReady().then(async()=>{await R(),c.app.on("activate",()=>{c.BrowserWindow.getAllWindows().length===0&&R().catch(o=>{console.error("[Main] Error in activate handler:",o)})})});c.app.on("window-all-closed",()=>{C&&C.stopMonitoring(),M&&M.disconnect(),process.platform!=="darwin"&&c.app.quit()});
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+const electron = require("electron");
+const path = require("path");
+const fs = require("fs");
+const whatsappWeb_js = require("whatsapp-web.js");
+const qrcode = require("qrcode-terminal");
+function _interopNamespaceDefault(e) {
+  const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
+  if (e) {
+    for (const k in e) {
+      if (k !== "default") {
+        const d = Object.getOwnPropertyDescriptor(e, k);
+        Object.defineProperty(n, k, d.get ? d : {
+          enumerable: true,
+          get: () => e[k]
+        });
+      }
+    }
+  }
+  n.default = e;
+  return Object.freeze(n);
+}
+const qrcode__namespace = /* @__PURE__ */ _interopNamespaceDefault(qrcode);
+class WhatsAppManager {
+  constructor(mainWindow2) {
+    __publicField(this, "client", null);
+    __publicField(this, "mainWindow", null);
+    __publicField(this, "status", "disconnected");
+    __publicField(this, "messageReceiverWorker", null);
+    // File cache to avoid re-downloading the same asset URL during a session
+    __publicField(this, "fileCache", /* @__PURE__ */ new Map());
+    this.mainWindow = mainWindow2;
+    this.initializeClient();
+  }
+  /**
+   * Set the MessageReceiverWorker
+   */
+  setMessageReceiverWorker(worker) {
+    this.messageReceiverWorker = worker;
+  }
+  /**
+   * Get the correct executable path for Puppeteer in production
+   */
+  getChromiumExecutablePath() {
+    if (!electron.app.isPackaged) {
+      return void 0;
+    }
+    const chromiumPath = path.join(
+      process.resourcesPath,
+      "app.asar.unpacked",
+      "node_modules",
+      "whatsapp-web.js",
+      "node_modules",
+      "puppeteer-core",
+      ".local-chromium",
+      "win64-1045629",
+      "chrome-win",
+      "chrome.exe"
+    );
+    console.log("[WhatsAppManager] Checking Chromium path:", chromiumPath);
+    if (fs.existsSync(chromiumPath)) {
+      console.log("[WhatsAppManager] Chromium found at:", chromiumPath);
+      return chromiumPath;
+    } else {
+      console.error("[WhatsAppManager] Chromium not found at expected path:", chromiumPath);
+      return void 0;
+    }
+  }
+  /**
+   * Initialize WhatsApp client with LocalAuth strategy
+   */
+  initializeClient() {
+    try {
+      console.log("[WhatsAppManager] Initializing client...");
+      const executablePath = this.getChromiumExecutablePath();
+      const puppeteerConfig = {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu"
+        ]
+      };
+      if (executablePath) {
+        puppeteerConfig.executablePath = executablePath;
+      }
+      console.log("[WhatsAppManager] Puppeteer config:", JSON.stringify(puppeteerConfig, null, 2));
+      this.client = new whatsappWeb_js.Client({
+        authStrategy: new whatsappWeb_js.LocalAuth({
+          dataPath: electron.app.isPackaged ? path.join(electron.app.getPath("userData"), ".wwebjs_auth") : ".wwebjs_auth"
+        }),
+        puppeteer: puppeteerConfig,
+        // Fix for "Cannot read properties of undefined (reading 'VERSION')" error
+        // This tells the library to fetch the latest WhatsApp Web version from a remote cache
+        webVersionCache: {
+          type: "remote",
+          remotePath: "https://raw.githubusercontent.com/AntoniaSaGe/AntoniaSaGe/main/whatsapp-web-version"
+        }
+      });
+      this.setupEventHandlers();
+    } catch (error) {
+      console.error("[WhatsAppManager] Error initializing client:", error);
+      this.status = "disconnected";
+      this.broadcastStatus("disconnected");
+    }
+  }
+  /**
+   * Setup event handlers for WhatsApp client
+   */
+  setupEventHandlers() {
+    if (!this.client) return;
+    this.client.on("qr", (qr) => {
+      console.log("[WhatsAppManager] QR Code received");
+      qrcode__namespace.generate(qr, { small: true });
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send("whatsapp:qr-code", qr);
+      }
+      this.status = "connecting";
+      this.broadcastStatus("connecting");
+    });
+    this.client.on("ready", () => {
+      console.log("[WhatsAppManager] Client is ready!");
+      this.status = "ready";
+      this.broadcastStatus("ready");
+    });
+    this.client.on("authenticated", () => {
+      console.log("[WhatsAppManager] Client authenticated");
+      setTimeout(() => {
+        if (this.status !== "ready") {
+          console.log("[WhatsAppManager] Fallback: Setting status to ready after authentication");
+          this.status = "ready";
+          this.broadcastStatus("ready");
+        }
+      }, 5e3);
+    });
+    this.client.on("auth_failure", (msg) => {
+      console.error("[WhatsAppManager] Authentication failed:", msg);
+      this.status = "disconnected";
+      this.broadcastStatus("disconnected");
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send("whatsapp:error", {
+          type: "auth_failure",
+          message: "Authentication failed. Please try again."
+        });
+      }
+    });
+    this.client.on("disconnected", (reason) => {
+      console.log("[WhatsAppManager] Client disconnected:", reason);
+      this.status = "disconnected";
+      this.broadcastStatus("disconnected");
+    });
+    this.client.on("loading_screen", (percent, message) => {
+      console.log(`[WhatsAppManager] Loading... ${percent}% - ${message}`);
+    });
+    this.client.on("message", async (message) => {
+      console.log("[WhatsAppManager] Message received:", message.from);
+      if (this.messageReceiverWorker) {
+        await this.messageReceiverWorker.handleIncomingMessage(message);
+      } else {
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send("whatsapp:message-received", {
+            id: message.id._serialized,
+            from: message.from,
+            to: message.to,
+            body: message.body,
+            type: message.type,
+            timestamp: message.timestamp,
+            hasMedia: message.hasMedia
+          });
+        }
+      }
+    });
+  }
+  /**
+   * Connect to WhatsApp
+   */
+  async connect() {
+    try {
+      console.log("[WhatsAppManager] Connecting...");
+      if (!this.client) {
+        throw new Error("Client not initialized");
+      }
+      if (this.status === "ready") {
+        console.log("[WhatsAppManager] Already connected");
+        return true;
+      }
+      this.status = "connecting";
+      this.broadcastStatus("connecting");
+      await this.client.initialize();
+      return true;
+    } catch (error) {
+      console.error("[WhatsAppManager] Connection error:", error);
+      this.status = "disconnected";
+      this.broadcastStatus("disconnected");
+      if (this.mainWindow) {
+        this.mainWindow.webContents.send("whatsapp:error", {
+          type: "connection_error",
+          message: error instanceof Error ? error.message : "Unknown connection error"
+        });
+      }
+      throw error;
+    }
+  }
+  /**
+   * Disconnect from WhatsApp
+   */
+  async disconnect() {
+    try {
+      console.log("[WhatsAppManager] Disconnecting...");
+      if (this.client) {
+        await this.client.destroy();
+        this.client = null;
+      }
+      this.status = "disconnected";
+      this.broadcastStatus("disconnected");
+      this.clearFileCache();
+      this.initializeClient();
+    } catch (error) {
+      console.error("[WhatsAppManager] Disconnect error:", error);
+      this.status = "disconnected";
+      this.broadcastStatus("disconnected");
+      throw error;
+    }
+  }
+  /**
+   * Format phone number to WhatsApp ID format
+   * Handles:
+   * - Removing non-numeric characters
+   * - Replacing leading '0' with '62' (Indonesia)
+   * - Appending '@c.us'
+   */
+  formatPhoneNumber(phone) {
+    let formatted = phone.replace(/\D/g, "");
+    if (formatted.startsWith("0")) {
+      formatted = "62" + formatted.slice(1);
+    }
+    if (!formatted.endsWith("@c.us")) {
+      formatted += "@c.us";
+    }
+    return formatted;
+  }
+  /**
+   * Download a file from URL to temporary directory with retry mechanism and caching
+   * @param url - URL of the file to download
+   * @param maxRetries - Maximum number of retries (default: 3)
+   * @returns Path to the downloaded file
+   */
+  async downloadFile(url, maxRetries = 3) {
+    const cachedPath = this.fileCache.get(url);
+    if (cachedPath && fs.existsSync(cachedPath)) {
+      console.log(`[WhatsAppManager] Using cached file for: ${url}`);
+      return cachedPath;
+    }
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const filePath = await this._downloadFileInternal(url);
+        this.fileCache.set(url, filePath);
+        console.log(`[WhatsAppManager] File cached for URL: ${url}`);
+        return filePath;
+      } catch (error) {
+        console.warn(`[WhatsAppManager] Download attempt ${attempt + 1}/${maxRetries} failed:`, error);
+        if (attempt === maxRetries - 1) throw error;
+        await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt) * 1e3));
+      }
+    }
+    throw new Error(`Failed to download file after ${maxRetries} attempts`);
+  }
+  /**
+   * Internal implementation of file download
+   */
+  async _downloadFileInternal(url) {
+    const https = await import("https");
+    const http = await import("http");
+    const fsAsync = await import("fs");
+    const pathModule = await import("path");
+    const os = await import("os");
+    return new Promise((resolve, reject) => {
+      try {
+        const tempDir = os.tmpdir();
+        const fileName = `whatsapp_media_${Date.now()}_${pathModule.basename(url).split("?")[0]}`;
+        const tempFilePath = pathModule.join(tempDir, fileName);
+        console.log(`[WhatsAppManager] Downloading to: ${tempFilePath}`);
+        const client = url.startsWith("https://") ? https : http;
+        const file = fsAsync.createWriteStream(tempFilePath);
+        client.get(url, (response) => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`Failed to download file: HTTP ${response.statusCode}`));
+            return;
+          }
+          response.pipe(file);
+          file.on("finish", () => {
+            file.close();
+            console.log(`[WhatsAppManager] Download complete: ${tempFilePath}`);
+            resolve(tempFilePath);
+          });
+          file.on("error", (err) => {
+            fsAsync.unlink(tempFilePath, () => {
+            });
+            reject(err);
+          });
+        }).on("error", (err) => {
+          fsAsync.unlink(tempFilePath, () => {
+          });
+          reject(err);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+  /**
+   * Clear the file cache and delete cached files
+   */
+  clearFileCache() {
+    console.log(`[WhatsAppManager] Clearing file cache (${this.fileCache.size} files)`);
+    for (const [url, filePath] of this.fileCache.entries()) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`[WhatsAppManager] Deleted cached file: ${filePath}`);
+        }
+      } catch (error) {
+        console.warn(`[WhatsAppManager] Failed to delete cached file: ${filePath}`, error);
+      }
+    }
+    this.fileCache.clear();
+  }
+  /**
+   * Send text message
+   * @param to - Phone number with country code (e.g., "6281234567890@c.us")
+   * @param content - Message content
+   */
+  async sendMessage(to, content) {
+    try {
+      if (!this.client || this.status !== "ready") {
+        throw new Error("WhatsApp client is not ready");
+      }
+      const chatId = this.formatPhoneNumber(to);
+      console.log(`[WhatsAppManager] Sending message to ${to} (formatted: ${chatId})`);
+      await this.client.sendMessage(chatId, content);
+      console.log(`[WhatsAppManager] Message sent successfully to ${to}`);
+      return true;
+    } catch (error) {
+      console.error("[WhatsAppManager] Send message error:", error);
+      throw error;
+    }
+  }
+  /**
+   * Send message with media
+   * @param to - Phone number with country code
+   * @param content - Message content
+   * @param mediaPath - Path to media file or URL
+   */
+  async sendMessageWithMedia(to, content, mediaPath) {
+    try {
+      if (!this.client || this.status !== "ready") {
+        throw new Error("WhatsApp client is not ready");
+      }
+      const chatId = this.formatPhoneNumber(to);
+      console.log(`[WhatsAppManager] Sending media message to ${to} (formatted: ${chatId})`);
+      let media;
+      let localFilePath;
+      if (mediaPath.startsWith("http://") || mediaPath.startsWith("https://")) {
+        console.log(`[WhatsAppManager] Downloading remote file: ${mediaPath}`);
+        localFilePath = await this.downloadFile(mediaPath);
+        media = whatsappWeb_js.MessageMedia.fromFilePath(localFilePath);
+      } else {
+        localFilePath = mediaPath;
+        media = whatsappWeb_js.MessageMedia.fromFilePath(mediaPath);
+      }
+      await this.client.sendMessage(chatId, media, { caption: content });
+      console.log(`[WhatsAppManager] Media message sent successfully to ${to}`);
+      return true;
+    } catch (error) {
+      console.error("[WhatsAppManager] Send media message error:", error);
+      throw error;
+    }
+  }
+  /**
+   * Get current status
+   */
+  getStatus() {
+    return this.status;
+  }
+  /**
+   * Check if client is ready
+   */
+  isReady() {
+    return this.status === "ready" && this.client !== null;
+  }
+  /**
+   * Broadcast status change to renderer
+   */
+  broadcastStatus(status) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send("whatsapp:status-change", status);
+    }
+  }
+  /**
+   * Get client info (for debugging)
+   */
+  async getClientInfo() {
+    try {
+      if (!this.client || this.status !== "ready") {
+        return null;
+      }
+      const info = this.client.info;
+      return {
+        wid: info.wid._serialized,
+        pushname: info.pushname,
+        platform: info.platform
+      };
+    } catch (error) {
+      console.error("[WhatsAppManager] Get client info error:", error);
+      return null;
+    }
+  }
+}
+class MessageProcessor {
+  constructor(whatsappManager2, mainWindow2) {
+    __publicField(this, "whatsappManager");
+    __publicField(this, "mainWindow");
+    __publicField(this, "isProcessing", false);
+    __publicField(this, "isPaused", false);
+    __publicField(this, "currentJob", null);
+    this.whatsappManager = whatsappManager2;
+    this.mainWindow = mainWindow2;
+  }
+  /**
+   * Get current job being processed
+   */
+  getCurrentJob() {
+    return this.currentJob;
+  }
+  /**
+   * Process a bulk message job
+   */
+  async processJob(job) {
+    var _a;
+    console.log("[MessageProcessor] Received job template:", JSON.stringify(job.template, null, 2));
+    if (!job.template) {
+      throw new Error("Template is required for job processing");
+    }
+    const hasContent = job.template.content && job.template.content.trim().length > 0;
+    const hasVariants = Array.isArray(job.template.variants) && job.template.variants.length > 0;
+    console.log(`[MessageProcessor] Template check - hasContent: ${hasContent}, hasVariants: ${hasVariants}`);
+    if (!hasContent && !hasVariants) {
+      console.error("[MessageProcessor] Template validation failed:", {
+        content: job.template.content,
+        variants: job.template.variants,
+        templateKeys: Object.keys(job.template)
+      });
+      throw new Error(`Template must have content or variants defined. Received: content=${job.template.content}, variants=${JSON.stringify(job.template.variants)}`);
+    }
+    if (this.isProcessing) {
+      throw new Error("Already processing a job");
+    }
+    this.isProcessing = true;
+    this.currentJob = job;
+    this.isPaused = false;
+    console.log(`[MessageProcessor] Starting job ${job.jobId} with ${job.contacts.length} contacts`);
+    let processed = 0;
+    let success = 0;
+    let failed = 0;
+    const messageLogs = [];
+    this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "processing");
+    for (const contact of job.contacts) {
+      if (this.isPaused) {
+        this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "paused");
+        await this.waitForResume();
+        this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "processing");
+      }
+      if (!this.isProcessing) break;
+      try {
+        let templateContent = job.template.content || "";
+        if (job.template.variants && job.template.variants.length > 0) {
+          const randomIndex = Math.floor(Math.random() * job.template.variants.length);
+          templateContent = job.template.variants[randomIndex];
+        }
+        const messageContent = this.formatMessage(templateContent, contact);
+        console.log(`[MessageProcessor] Template has ${((_a = job.template.variants) == null ? void 0 : _a.length) || 0} variants`);
+        console.log(`[MessageProcessor] Selected template content: "${templateContent}"`);
+        console.log(`[MessageProcessor] Formatted message: "${messageContent}"`);
+        console.log(`[MessageProcessor] Has assets: ${job.assets && job.assets.length > 0}`);
+        if (job.assets && job.assets.length > 0) {
+          await this.whatsappManager.sendMessageWithMedia(contact.phone, messageContent, job.assets[0]);
+        } else {
+          await this.whatsappManager.sendMessage(contact.phone, messageContent);
+        }
+        messageLogs.push({
+          id: crypto.randomUUID(),
+          activity_log_id: job.jobId,
+          contact_id: contact.id || "",
+          contact_name: contact.name || contact.contact_name || "Unknown Contact",
+          contact_phone: contact.phone || contact.contact_phone || "Unknown Phone",
+          status: "sent",
+          sent_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        success++;
+      } catch (error) {
+        console.error(`[MessageProcessor] Failed to send to ${contact.phone}:`, error);
+        messageLogs.push({
+          id: crypto.randomUUID(),
+          activity_log_id: job.jobId,
+          contact_id: contact.id || "",
+          contact_name: contact.name || contact.contact_name || "Unknown Contact",
+          contact_phone: contact.phone || contact.contact_phone || "Unknown Phone",
+          status: "failed",
+          sent_at: (/* @__PURE__ */ new Date()).toISOString(),
+          error_message: error instanceof Error ? error.message : String(error)
+        });
+        if (this.mainWindow) {
+          this.mainWindow.webContents.send("whatsapp:job-error-detail", {
+            jobId: job.jobId,
+            phone: contact.phone,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+        failed++;
+      }
+      processed++;
+      this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "processing");
+      const delayMs = this.calculateDelayFromConfig(job.delayConfig);
+      await this.delay(delayMs);
+    }
+    this.isProcessing = false;
+    this.currentJob = null;
+    this.reportProgress(job.jobId, processed, job.contacts.length, success, failed, "completed", {
+      logs: messageLogs
+    });
+    console.log(`[MessageProcessor] Job ${job.jobId} completed`);
+  }
+  /**
+   * Pause current job
+   */
+  pause() {
+    if (this.isProcessing && !this.isPaused) {
+      this.isPaused = true;
+      console.log("[MessageProcessor] Job paused");
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Resume current job
+   */
+  resume() {
+    if (this.isProcessing && this.isPaused) {
+      this.isPaused = false;
+      console.log("[MessageProcessor] Job resumed");
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Stop current job
+   */
+  stop() {
+    if (this.isProcessing) {
+      this.isProcessing = false;
+      this.isPaused = false;
+      this.currentJob = null;
+      console.log("[MessageProcessor] Job stopped");
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Format message by replacing variables
+   * Supported variables: {{name}}, {{phone}}, {{var1}}, {{var2}}, etc.
+   */
+  formatMessage(template, contact) {
+    let message = template;
+    message = message.replace(/{{name}}/g, contact.name || "");
+    message = message.replace(/{{phone}}/g, contact.phone || "");
+    const matches = message.match(/{{(.*?)}}/g);
+    if (matches) {
+      matches.forEach((match) => {
+        const key = match.replace(/{{|}}/g, "");
+        if (contact[key] !== void 0) {
+          message = message.replace(new RegExp(match, "g"), String(contact[key]));
+        }
+      });
+    }
+    return message;
+  }
+  /**
+   * Report progress to renderer
+   */
+  reportProgress(jobId, processed, total, success, failed, status, metadata) {
+    if (this.mainWindow) {
+      this.mainWindow.webContents.send("whatsapp:job-progress", {
+        jobId,
+        processed,
+        total,
+        success,
+        failed,
+        status,
+        metadata
+      });
+    }
+  }
+  /**
+   * Calculate delay in milliseconds based on delay configuration
+   * @param delayConfig - Optional delay configuration from job settings
+   * @returns Delay in milliseconds
+   */
+  calculateDelayFromConfig(delayConfig) {
+    const DEFAULT_MIN_DELAY_MS = 2e3;
+    const DEFAULT_MAX_DELAY_MS = 5e3;
+    if (!delayConfig || !delayConfig.delayRange || delayConfig.delayRange.length === 0) {
+      console.warn("[MessageProcessor] No valid delayConfig provided, using default values");
+      return DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
+    }
+    if (delayConfig.delayRange.length < 1) {
+      console.warn("[MessageProcessor] Invalid delayRange, using default values");
+      return DEFAULT_MIN_DELAY_MS + Math.random() * (DEFAULT_MAX_DELAY_MS - DEFAULT_MIN_DELAY_MS);
+    }
+    const minDelayMs = delayConfig.delayRange[0] * 1e3;
+    let maxDelayMs = minDelayMs;
+    if (delayConfig.mode === "dynamic" && delayConfig.delayRange.length >= 2) {
+      maxDelayMs = delayConfig.delayRange[1] * 1e3;
+      if (maxDelayMs <= minDelayMs) {
+        console.warn("[MessageProcessor] Invalid delay range (max <= min), using static mode");
+        return minDelayMs;
+      }
+      return minDelayMs + Math.random() * (maxDelayMs - minDelayMs);
+    }
+    return minDelayMs;
+  }
+  delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  waitForResume() {
+    return new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (!this.isPaused) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 500);
+    });
+  }
+}
+class QueueWorker {
+  constructor(messageProcessor2) {
+    __publicField(this, "queue", []);
+    __publicField(this, "isRunning", false);
+    __publicField(this, "messageProcessor");
+    this.messageProcessor = messageProcessor2;
+  }
+  /**
+   * Add a job to the queue and start processing if not already running
+   */
+  async addToQueue(job) {
+    console.log(`[QueueWorker] Adding job ${job.jobId} to queue`);
+    this.queue.push(job);
+    this.processQueue();
+  }
+  /**
+   * Process the queue sequentially
+   */
+  async processQueue() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    console.log("[QueueWorker] Starting queue processing");
+    while (this.queue.length > 0) {
+      const job = this.queue.shift();
+      if (job) {
+        try {
+          console.log(`[QueueWorker] Processing job ${job.jobId}`);
+          await this.messageProcessor.processJob(job);
+        } catch (error) {
+          console.error(`[QueueWorker] Error processing job ${job.jobId}:`, error);
+        }
+      }
+    }
+    this.isRunning = false;
+    console.log("[QueueWorker] Queue processing finished");
+  }
+  /**
+   * Get current queue length
+   */
+  getQueueLength() {
+    return this.queue.length;
+  }
+}
+let whatsappManager$1 = null;
+let messageProcessor$1 = null;
+let queueWorker$1 = null;
+const setupIPC = (mainWindow2, wm, mp, qw) => {
+  console.log("[IPC] Setting up IPC handlers...");
+  if (wm) {
+    whatsappManager$1 = wm;
+  } else {
+    console.log("[IPC] Creating new WhatsAppManager (Fallback)");
+    whatsappManager$1 = new WhatsAppManager(mainWindow2);
+  }
+  if (mp) {
+    messageProcessor$1 = mp;
+  } else {
+    console.log("[IPC] Creating new MessageProcessor (Fallback)");
+    messageProcessor$1 = new MessageProcessor(whatsappManager$1, mainWindow2);
+  }
+  if (qw) {
+    queueWorker$1 = qw;
+  } else if (messageProcessor$1) {
+    console.log("[IPC] Creating new QueueWorker (Fallback)");
+    queueWorker$1 = new QueueWorker(messageProcessor$1);
+  }
+  electron.ipcMain.handle("whatsapp:connect", async () => {
+    try {
+      console.log("[IPC] whatsapp:connect called");
+      if (!whatsappManager$1) {
+        throw new Error("WhatsAppManager not initialized");
+      }
+      const result = await whatsappManager$1.connect();
+      return { success: true, connected: result };
+    } catch (error) {
+      console.error("[IPC] whatsapp:connect error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  });
+  electron.ipcMain.handle("whatsapp:disconnect", async () => {
+    try {
+      console.log("[IPC] whatsapp:disconnect called");
+      if (!whatsappManager$1) {
+        throw new Error("WhatsAppManager not initialized");
+      }
+      await whatsappManager$1.disconnect();
+      return { success: true };
+    } catch (error) {
+      console.error("[IPC] whatsapp:disconnect error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  });
+  electron.ipcMain.handle("whatsapp:send-message", async (_, { to, content, assets }) => {
+    try {
+      console.log(`[IPC] whatsapp:send-message called for ${to}`);
+      if (!whatsappManager$1) {
+        throw new Error("WhatsAppManager not initialized");
+      }
+      let result;
+      if (assets && assets.length > 0) {
+        result = await whatsappManager$1.sendMessageWithMedia(to, content, assets[0]);
+      } else {
+        result = await whatsappManager$1.sendMessage(to, content);
+      }
+      return { success: result };
+    } catch (error) {
+      console.error("[IPC] whatsapp:send-message error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  });
+  electron.ipcMain.handle("whatsapp:get-status", async () => {
+    try {
+      if (!whatsappManager$1) {
+        return { status: "disconnected", ready: false };
+      }
+      const status = whatsappManager$1.getStatus();
+      const ready = whatsappManager$1.isReady();
+      return { status, ready };
+    } catch (error) {
+      console.error("[IPC] whatsapp:get-status error:", error);
+      return { status: "disconnected", ready: false };
+    }
+  });
+  electron.ipcMain.handle("whatsapp:get-client-info", async () => {
+    try {
+      console.log("[IPC] whatsapp:get-client-info called");
+      if (!whatsappManager$1) {
+        return null;
+      }
+      const info = await whatsappManager$1.getClientInfo();
+      return info;
+    } catch (error) {
+      console.error("[IPC] whatsapp:get-client-info error:", error);
+      return null;
+    }
+  });
+  electron.ipcMain.handle("whatsapp:process-job", async (_, { jobId, contacts, template, assets, delayConfig }) => {
+    try {
+      console.log(`[IPC] whatsapp:process-job called for job ${jobId}`);
+      if (!whatsappManager$1 || !whatsappManager$1.isReady()) {
+        throw new Error("WhatsApp is not ready");
+      }
+      if (queueWorker$1) {
+        console.log(`[IPC] Adding job ${jobId} to queue`);
+        queueWorker$1.addToQueue({
+          jobId,
+          contacts,
+          template,
+          assets,
+          delayConfig
+        }).catch((err) => {
+          console.error("[IPC] Error adding to queue:", err);
+        });
+      } else if (messageProcessor$1) {
+        console.warn("[IPC] QueueWorker not available, processing directly");
+        messageProcessor$1.processJob({
+          jobId,
+          contacts,
+          template,
+          assets,
+          delayConfig
+        }).catch((err) => {
+          console.error("[IPC] Job processing error:", err);
+        });
+      } else {
+        throw new Error("MessageProcessor not initialized");
+      }
+      return {
+        success: true,
+        message: "Job started",
+        jobId
+      };
+    } catch (error) {
+      console.error("[IPC] whatsapp:process-job error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  });
+  electron.ipcMain.handle("whatsapp:pause-job", async (_, { jobId }) => {
+    console.log(`[IPC] whatsapp:pause-job called for job ${jobId}`);
+    if (messageProcessor$1) {
+      const success = messageProcessor$1.pause();
+      return { success, message: success ? "Job paused" : "Failed to pause" };
+    }
+    return { success: false, message: "Processor not ready" };
+  });
+  electron.ipcMain.handle("whatsapp:resume-job", async (_, { jobId }) => {
+    console.log(`[IPC] whatsapp:resume-job called for job ${jobId}`);
+    if (messageProcessor$1) {
+      const success = messageProcessor$1.resume();
+      return { success, message: success ? "Job resumed" : "Failed to resume" };
+    }
+    return { success: false, message: "Processor not ready" };
+  });
+  console.log("[IPC] IPC handlers setup complete");
+};
+class StatusWorker {
+  // 3 minutes (180,000 ms)
+  constructor(whatsappManager2, mainWindow2) {
+    __publicField(this, "whatsappManager");
+    __publicField(this, "mainWindow");
+    __publicField(this, "checkInterval", null);
+    __publicField(this, "CHECK_INTERVAL_MS", 18e4);
+    this.whatsappManager = whatsappManager2;
+    this.mainWindow = mainWindow2;
+  }
+  /**
+   * Start monitoring connection status
+   */
+  startMonitoring() {
+    if (this.checkInterval) return;
+    console.log("[StatusWorker] Starting status monitoring");
+    this.checkHealth();
+    this.checkInterval = setInterval(async () => {
+      await this.checkHealth();
+    }, this.CHECK_INTERVAL_MS);
+  }
+  /**
+   * Stop monitoring
+   */
+  stopMonitoring() {
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = null;
+      console.log("[StatusWorker] Stopped status monitoring");
+    }
+  }
+  /**
+   * Check health and auto-reconnect if needed
+   */
+  async checkHealth() {
+    const status = this.whatsappManager.getStatus();
+    console.log(`[StatusWorker] Health check: ${status}`);
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send("whatsapp:status-change", status);
+    }
+    if (status === "disconnected") {
+      console.log("[StatusWorker] Detected disconnection, attempting reconnect...");
+      try {
+        await this.whatsappManager.connect();
+      } catch (err) {
+        console.error("[StatusWorker] Reconnect failed:", err);
+      }
+    }
+  }
+}
+class MessageReceiverWorker {
+  constructor(_whatsappManager, mainWindow2) {
+    // private whatsappManager: WhatsAppManager; // Removed unused property
+    __publicField(this, "mainWindow");
+    __publicField(this, "unsubscribeKeywords", ["unsubscribe", "stop", "batal", "berhenti", "jangan kirim", "keluar", "cancel"]);
+    this.mainWindow = mainWindow2;
+  }
+  /**
+   * Handle incoming message from WhatsAppManager
+   */
+  async handleIncomingMessage(message) {
+    try {
+      console.log("[MessageReceiverWorker] Processing incoming message from:", message.from);
+      const isUnsubscribe = this.isUnsubscribeRequest(message.body);
+      if (isUnsubscribe) {
+        console.log("[MessageReceiverWorker] Unsubscribe request detected from:", message.from);
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send("whatsapp:unsubscribe-detected", {
+            phoneNumber: message.from,
+            message: message.body,
+            timestamp: (/* @__PURE__ */ new Date()).toISOString()
+          });
+        }
+      }
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send("whatsapp:message-received", {
+          id: message.id._serialized,
+          from: message.from,
+          to: message.to,
+          body: message.body,
+          type: message.type,
+          timestamp: message.timestamp,
+          hasMedia: message.hasMedia,
+          isUnsubscribeRequest: isUnsubscribe
+        });
+      }
+    } catch (error) {
+      console.error("[MessageReceiverWorker] Error handling message:", error);
+    }
+  }
+  /**
+   * Check if message content contains unsubscribe keywords
+   */
+  isUnsubscribeRequest(content) {
+    if (!content) return false;
+    const lowerContent = content.toLowerCase();
+    return this.unsubscribeKeywords.some((keyword) => lowerContent.includes(keyword));
+  }
+}
+async function fileExists(filePath) {
+  try {
+    await fs.promises.access(filePath, fs.constants.F_OK | fs.constants.R_OK);
+    return true;
+  } catch (error) {
+    console.debug(`[Main] File does not exist or is not accessible: ${filePath}`, error);
+    return false;
+  }
+}
+let mainWindow = null;
+let whatsappManager = null;
+let messageProcessor = null;
+let queueWorker = null;
+let statusWorker = null;
+let messageReceiverWorker = null;
+const createWindow = async () => {
+  let iconPath;
+  try {
+    if (process.env.VITE_DEV_SERVER_URL) {
+      const publicPath = path.join(__dirname, "../../public/icon.png");
+      console.log("[Main] Development mode - trying icon path:", publicPath);
+      const fileExistsResult = await fileExists(publicPath);
+      if (fileExistsResult) {
+        iconPath = publicPath;
+      } else {
+        console.warn("[Main] Development icon not found, falling back to default");
+        iconPath = void 0;
+      }
+    } else {
+      const appDir = path.dirname(electron.app.getAppPath());
+      const productionIconPath = path.join(appDir, "icon.ico");
+      console.log("[Main] Production mode - trying icon path:", productionIconPath);
+      const fileExistsResult = await fileExists(productionIconPath);
+      if (fileExistsResult) {
+        iconPath = productionIconPath;
+      } else {
+        const resourcesIconPath = path.join(process.resourcesPath, "icon.ico");
+        console.log("[Main] Fallback icon path:", resourcesIconPath);
+        const resourcesFileExists = await fileExists(resourcesIconPath);
+        iconPath = resourcesFileExists ? resourcesIconPath : void 0;
+      }
+    }
+  } catch (error) {
+    console.error("[Main] Error determining icon path:", error);
+    iconPath = void 0;
+  }
+  try {
+    mainWindow = new electron.BrowserWindow({
+      width: 1200,
+      height: 800,
+      autoHideMenuBar: true,
+      icon: iconPath,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        nodeIntegration: false,
+        contextIsolation: true,
+        // Enable web security but allow local file access for packaged app
+        webSecurity: true
+      }
+    });
+    if (process.platform === "win32" && iconPath) {
+      try {
+        mainWindow.setIcon(iconPath);
+      } catch (iconError) {
+        console.error("[Main] Failed to set window icon:", iconError);
+      }
+    }
+  } catch (windowError) {
+    console.error("[Main] Failed to create browser window:", windowError);
+    mainWindow = new electron.BrowserWindow({
+      width: 1200,
+      height: 800,
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        nodeIntegration: false,
+        contextIsolation: true,
+        webSecurity: true
+      }
+    });
+  }
+  console.log("[Main] Initializing workers...");
+  whatsappManager = new WhatsAppManager(mainWindow);
+  messageProcessor = new MessageProcessor(whatsappManager, mainWindow);
+  queueWorker = new QueueWorker(messageProcessor);
+  statusWorker = new StatusWorker(whatsappManager, mainWindow);
+  messageReceiverWorker = new MessageReceiverWorker(whatsappManager, mainWindow);
+  whatsappManager.setMessageReceiverWorker(messageReceiverWorker);
+  statusWorker.startMonitoring();
+  setupIPC(mainWindow, whatsappManager, messageProcessor, queueWorker);
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  } else {
+    const indexPath = path.join(electron.app.getAppPath(), "dist", "index.html");
+    console.log("[Main] Loading from:", indexPath);
+    mainWindow.loadFile(indexPath);
+  }
+  mainWindow.webContents.on("before-input-event", (_event, input) => {
+    if (input.key === "F5" || input.control && input.key === "r") {
+      _event.preventDefault();
+    }
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
+    console.error("[Main] Failed to load:", errorCode, errorDescription);
+  });
+  mainWindow.webContents.on("crashed", (_event, killed) => {
+    console.error("[Main] Renderer crashed:", killed);
+  });
+};
+electron.app.whenReady().then(async () => {
+  await createWindow();
+  electron.app.on("activate", () => {
+    if (electron.BrowserWindow.getAllWindows().length === 0) {
+      createWindow().catch((error) => {
+        console.error("[Main] Error in activate handler:", error);
+      });
+    }
+  });
+});
+electron.app.on("window-all-closed", () => {
+  if (statusWorker) {
+    statusWorker.stopMonitoring();
+  }
+  if (whatsappManager) {
+    whatsappManager.disconnect();
+  }
+  if (process.platform !== "darwin") {
+    electron.app.quit();
+  }
+});
