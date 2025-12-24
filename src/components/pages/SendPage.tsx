@@ -646,6 +646,7 @@ export function SendPage() {
     groupService,
     historyService,
     assetService,
+    messageService,
     isInitialized
   } = useServices();
 
@@ -986,6 +987,32 @@ export function SendPage() {
               logs: data.metadata?.logs || [] // Store individual message logs
             }
           });
+
+
+
+          // Sync outbound messages to Inbox
+          if (data.metadata?.logs && Array.isArray(data.metadata.logs)) {
+            // Process in chunks to avoid blocking UI
+            const logs = data.metadata.logs;
+            const processLogs = async () => {
+              const sentLogs = logs.filter((l: any) => l.status === 'sent');
+              for (const log of sentLogs) {
+                try {
+                  await messageService.createOutboundMessage({
+                    contact_id: log.contact_id,
+                    contact_phone: log.contact_phone,
+                    contact_name: log.contact_name,
+                    content: log.content || selectedTemplateData?.name || 'Message Sent',
+                    activity_log_id: log.activity_log_id
+                  });
+                } catch (e) {
+                  console.error('Failed to sync message to inbox:', e);
+                }
+              }
+            };
+            // Run in background
+            processLogs();
+          }
 
           // Update local quota state
           if (quota) {

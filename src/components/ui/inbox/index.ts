@@ -1,0 +1,8 @@
+export { InboxPage } from './InboxPage';
+export { ConversationList } from './ConversationList';
+export { ConversationItem } from './ConversationItem';
+export { ChatWindow } from './ChatWindow';
+export { ChatBubble } from './ChatBubble';
+export { ChatHeader } from './ChatHeader';
+export { InboxFiltersPanel } from './InboxFilters';
+export { ChatInput } from './ChatInput';

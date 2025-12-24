@@ -18,6 +18,7 @@ export interface MessageLog {
     contact_id: string;
     contact_name: string;
     contact_phone: string;
+    content?: string;
     status: 'sent' | 'failed' | 'pending';
     sent_at?: string;
     error_message?: string;
@@ -133,6 +134,7 @@ export class MessageProcessor {
                     contact_id: contact.id || '',
                     contact_name: contact.name || contact.contact_name || 'Unknown Contact',
                     contact_phone: contact.phone || contact.contact_phone || 'Unknown Phone',
+                    content: messageContent,
                     status: 'sent',
                     sent_at: new Date().toISOString()
                 });

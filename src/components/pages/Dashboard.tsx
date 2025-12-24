@@ -25,7 +25,8 @@ import {
   LogOut,
   Menu,
   X,
-  File
+  File,
+  Inbox
 } from 'lucide-react';
 import { useIntl, FormattedMessage } from 'react-intl';
 
@@ -323,6 +324,12 @@ export function Dashboard({ userName, onLogout }: DashboardProps) {
 
   // Main dashboard UI (ready)
   const menuItems = [
+    {
+      id: 'inbox',
+      label: intl.formatMessage({ id: 'dashboard.menu.inbox', defaultMessage: 'Inbox' }),
+      icon: Inbox,
+      description: intl.formatMessage({ id: 'dashboard.menu.inbox.desc', defaultMessage: 'View incoming messages' })
+    },
     {
       id: 'contacts',
       label: intl.formatMessage({ id: 'dashboard.menu.contacts', defaultMessage: 'Contacts' }),

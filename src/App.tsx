@@ -17,6 +17,7 @@ import { HistoryPage } from '@/components/pages/HistoryPage';
 import { CampaignHistoryPage } from '@/components/pages/CampaignHistoryPage';
 import { GroupPage } from '@/components/pages/GroupPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
+import { InboxPage } from '@/components/pages/InboxPage';
 import { ServiceProvider } from '@/lib/services/ServiceContext';
 import { AuthResponse, PINValidation, serviceManager } from '@/lib/services';
 import { AuthService } from '@/lib/services/AuthService';
@@ -75,6 +76,16 @@ const ProtectedRoutes = ({
               userName={authData?.user.name || 'User'}
               onLogout={onLogout}
             />
+          </ServiceProvider>
+        }
+      />
+
+      {/* Inbox Chat */}
+      <Route
+        path="/inbox"
+        element={
+          <ServiceProvider>
+            <InboxPage />
           </ServiceProvider>
         }
       />

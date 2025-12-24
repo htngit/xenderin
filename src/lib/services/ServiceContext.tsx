@@ -8,6 +8,7 @@ import { HistoryService } from './HistoryService';
 import { QuotaService } from './QuotaService';
 import { AuthService } from './AuthService';
 import { PaymentService } from './PaymentService';
+import { MessageService } from './MessageService';
 
 interface ServiceContextType {
   templateService: TemplateService;
@@ -18,6 +19,7 @@ interface ServiceContextType {
   quotaService: QuotaService;
   authService: AuthService;
   paymentService: PaymentService;
+  messageService: MessageService;
   isInitialized: boolean;
 }
 
@@ -77,6 +79,7 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
       quotaService: serviceManager.getQuotaService(),
       authService: serviceManager.getAuthService(),
       paymentService: serviceManager.getPaymentService(),
+      messageService: serviceManager.getMessageService(),
       isInitialized: true,
     };
   } catch (error) {

@@ -239,3 +239,43 @@ export interface Team {
   created_at: string;
   updated_at: string;
 }
+
+// Inbox Chat types
+export interface Message {
+  id: string;
+  master_user_id: string;
+  contact_id?: string;
+  contact_phone: string;
+  contact_name?: string;
+  direction: 'inbound' | 'outbound';
+  content?: string;
+  message_type: string;
+  has_media: boolean;
+  media_url?: string;
+  status: 'received' | 'sent' | 'delivered' | 'read' | 'failed';
+  whatsapp_message_id?: string;
+  activity_log_id?: string;
+  sent_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationSummary {
+  contact_phone: string;
+  contact_name?: string;
+  contact_id?: string;
+  contact_tags?: string[];
+  contact_group_id?: string;
+  contact_group_name?: string;
+  contact_group_color?: string;
+  last_message?: Message;
+  unread_count: number;
+  last_activity: string;
+}
+
+export interface InboxFilters {
+  tags?: string[];
+  group_ids?: string[];
+  search?: string;
+  unread_only?: boolean;
+}
