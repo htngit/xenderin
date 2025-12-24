@@ -6,3 +6,4 @@ export { ChatBubble } from './ChatBubble';
 export { ChatHeader } from './ChatHeader';
 export { InboxFiltersPanel } from './InboxFilters';
 export { ChatInput } from './ChatInput';
+export { NewChatDialog } from './NewChatDialog';

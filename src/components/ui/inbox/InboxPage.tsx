@@ -7,12 +7,13 @@ import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MessageService, GroupService, ContactService } from '@/lib/services';
-import { ConversationSummary, Message, InboxFilters, ContactGroup } from '@/lib/services/types';
+import { ConversationSummary, Message, InboxFilters, ContactGroup, ContactWithGroup } from '@/lib/services/types';
 import { syncManager } from '@/lib/sync/SyncManager';
-import { ConversationList } from './ConversationList';
-import { ChatWindow } from './ChatWindow';
-import { ChatHeader } from './ChatHeader';
-import { InboxFiltersPanel } from './InboxFilters';
+import { ConversationList } from '@/components/ui/inbox/ConversationList';
+import { ChatWindow } from '@/components/ui/inbox/ChatWindow';
+import { ChatHeader } from '@/components/ui/inbox/ChatHeader';
+import { InboxFiltersPanel } from '@/components/ui/inbox/InboxFilters';
+import { NewChatDialog } from '@/components/ui/inbox/NewChatDialog';
 import { cn } from '@/lib/utils';
 
 interface IncomingWhatsAppMessage {
@@ -39,6 +40,7 @@ export function InboxPage() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+    const [isNewChatOpen, setIsNewChatOpen] = useState(false);
     const [groups, setGroups] = useState<ContactGroup[]>([]);
     const [tags, setTags] = useState<string[]>([]);
     const [filters, setFilters] = useState<InboxFilters>({});
@@ -164,8 +166,11 @@ export function InboxPage() {
                 content: content
             });
 
-            // 3. Refresh Messages
-            await loadMessages(selectedConversation.contact_phone);
+            // 3. Refresh Messages and Conversation List
+            await Promise.all([
+                loadMessages(selectedConversation.contact_phone),
+                loadConversations()
+            ]);
 
         } catch (error) {
             console.error('Failed to send message', error);
@@ -185,6 +190,10 @@ export function InboxPage() {
             await contactService.updateContact(contactId, { tags: newTags });
             await loadConversations();
 
+            // Refresh available tags to include any new tags in the filter
+            const updatedTags = await messageService.getAvailableTags();
+            setTags(updatedTags);
+
             // Update selected conversation if it's the one being updated
             if (selectedConversation?.contact_id === contactId) {
                 setSelectedConversation(prev => prev ? { ...prev, contact_tags: newTags } : null);
@@ -192,7 +201,7 @@ export function InboxPage() {
         } catch (error) {
             console.error('Error updating tags:', error);
         }
-    }, [contactService, loadConversations, selectedConversation]);
+    }, [contactService, messageService, loadConversations, selectedConversation]);
 
     // Handle filter change
     const handleFilterChange = useCallback((newFilters: InboxFilters) => {
@@ -204,11 +213,54 @@ export function InboxPage() {
         loadConversations();
     }, [filters, loadConversations]);
 
+    // Handle delete chats
+    const handleDeleteChats = useCallback(async (phones: string[]) => {
+        try {
+            await messageService.deleteMessagesByPhone(phones);
+            await loadConversations();
+
+            // Clear selected conversation if it was deleted
+            if (selectedConversation && phones.includes(selectedConversation.contact_phone)) {
+                setSelectedConversation(null);
+                setMessages([]);
+            }
+        } catch (error) {
+            console.error('Error deleting chats:', error);
+        }
+    }, [messageService, loadConversations, selectedConversation]);
+
+    const handleNewChat = () => {
+        setIsNewChatOpen(true);
+    };
+
+    const handleSelectContact = (contact: ContactWithGroup) => {
+        // Check if conversation already exists
+        const existingConversation = conversations.find(c => c.contact_phone === contact.phone);
+
+        if (existingConversation) {
+            setSelectedConversation(existingConversation);
+        } else {
+            // Create temporary conversation object
+            const newConversation: ConversationSummary = {
+                contact_phone: contact.phone,
+                contact_name: contact.name,
+                contact_id: contact.id,
+                contact_group_id: contact.groups?.id,
+                contact_group_name: contact.groups?.name,
+                contact_group_color: contact.groups?.color,
+                unread_count: 0,
+                last_activity: new Date().toISOString()
+            };
+            setSelectedConversation(newConversation);
+        }
+        setIsNewChatOpen(false);
+    };
+
     return (
         <div className="flex h-screen bg-background">
             {/* Sidebar: Conversation List */}
             <div className={cn(
-                "flex flex-col border-r border-border",
+                "flex flex-col border-r border-border flex-shrink-0",
                 "w-full md:w-[380px] lg:w-[420px]",
                 selectedConversation ? "hidden md:flex" : "flex"
             )}>
@@ -255,13 +307,15 @@ export function InboxPage() {
                     conversations={conversations}
                     selectedPhone={selectedConversation?.contact_phone}
                     onSelect={handleSelectConversation}
+                    onNewChat={handleNewChat}
+                    onDeleteChats={handleDeleteChats}
                     isLoading={isLoading}
                 />
             </div>
 
             {/* Main: Chat Window */}
             <div className={cn(
-                "flex-1 flex flex-col",
+                "flex-1 flex flex-col overflow-hidden",
                 !selectedConversation ? "hidden md:flex" : "flex"
             )}>
                 {selectedConversation ? (
@@ -305,6 +359,12 @@ export function InboxPage() {
                     </div>
                 )}
             </div>
+
+            <NewChatDialog
+                open={isNewChatOpen}
+                onOpenChange={setIsNewChatOpen}
+                onSelectContact={handleSelectContact}
+            />
         </div>
     );
 }

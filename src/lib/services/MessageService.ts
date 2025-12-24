@@ -562,6 +562,51 @@ export class MessageService {
     }
 
     /**
+     * Delete all messages for given phone numbers (soft delete)
+     */
+    async deleteMessagesByPhone(phones: string[]): Promise<void> {
+        try {
+            const masterUserId = await this.getMasterUserId();
+            const now = new Date().toISOString();
+
+            for (const phone of phones) {
+                const normalizedPhone = phone.replace(/[^\d]/g, '');
+
+                // Find all messages for this phone number
+                const messages = await db.messages
+                    .where('master_user_id')
+                    .equals(masterUserId)
+                    .and(msg => !msg._deleted && msg.contact_phone.replace(/[^\d]/g, '') === normalizedPhone)
+                    .toArray();
+
+                // Soft delete each message
+                for (const message of messages) {
+                    await db.messages.update(message.id, {
+                        _deleted: true,
+                        updated_at: now,
+                        _syncStatus: 'pending'
+                    });
+
+                    // Add to sync queue
+                    await this.syncManager.addToSyncQueue(
+                        'messages',
+                        'delete',
+                        message.id,
+                        { ...message, _deleted: true, updated_at: now }
+                    );
+                }
+            }
+            // Note: Local listeners expect a Message parameter, so we don't call them for deletion
+            // The UI will refresh via the component's reload after delete
+
+            console.log(`[MessageService] Deleted messages for ${phones.length} conversation(s)`);
+        } catch (error) {
+            console.error('Error deleting messages:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Force sync with server
      */
     async forceSync(): Promise<void> {

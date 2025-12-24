@@ -1,19 +1,36 @@
 'use client';
-
 import { ConversationSummary } from '@/lib/services/types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { CheckSquare, Trash2 } from 'lucide-react';
 
 interface ConversationItemProps {
     conversation: ConversationSummary;
     isSelected: boolean;
+    isSelectionMode: boolean;
+    isChecked: boolean;
     onClick: () => void;
+    onCheckChange: (checked: boolean) => void;
+    onEnterSelectionMode: () => void;
+    onDelete: () => void;
 }
 
 export function ConversationItem({
     conversation,
     isSelected,
-    onClick
+    isSelectionMode,
+    isChecked,
+    onClick,
+    onCheckChange,
+    onEnterSelectionMode,
+    onDelete
 }: ConversationItemProps) {
     const {
         contact_name,
@@ -59,15 +76,36 @@ export function ConversationItem({
         return name.substring(0, 2).toUpperCase();
     };
 
-    return (
+    const handleClick = () => {
+        if (isSelectionMode) {
+            onCheckChange(!isChecked);
+        } else {
+            onClick();
+        }
+    };
+
+    const content = (
         <div
-            onClick={onClick}
+            onClick={handleClick}
             className={cn(
-                "flex items-start gap-3 p-4 cursor-pointer transition-colors",
+                "flex items-start gap-3 py-4 pl-4 pr-10 cursor-pointer transition-colors",
                 "hover:bg-muted/50",
-                isSelected && "bg-primary/10 hover:bg-primary/15"
+                isSelected && !isSelectionMode && "bg-primary/10 hover:bg-primary/15",
+                isChecked && isSelectionMode && "bg-primary/10"
             )}
         >
+            {/* Checkbox (visible in selection mode) */}
+            {isSelectionMode && (
+                <div className="flex-shrink-0 flex items-center h-12">
+                    <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={onCheckChange}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-5 w-5"
+                    />
+                </div>
+            )}
+
             {/* Avatar */}
             <div
                 className={cn(
@@ -87,7 +125,7 @@ export function ConversationItem({
                     <span className="font-medium truncate">
                         {contact_name || contact_phone}
                     </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                    <span className="text-xs text-muted-foreground flex-shrink-0 mr-5">
                         {last_message?.sent_at && formatTime(last_message.sent_at)}
                     </span>
                 </div>
@@ -116,14 +154,14 @@ export function ConversationItem({
                         {contact_group_name && (
                             <Badge
                                 variant="outline"
-                                className="text-xs px-1.5 py-0"
+                                className="text-xs px-1.5 py-0 mr-5"
                                 style={contact_group_color ? { borderColor: contact_group_color, color: contact_group_color } : undefined}
                             >
                                 {contact_group_name}
                             </Badge>
                         )}
                         {contact_tags?.slice(0, 2).map((tag) => (
-                            <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0">
+                            <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0 mr-5">
                                 {tag}
                             </Badge>
                         ))}
@@ -136,5 +174,28 @@ export function ConversationItem({
                 )}
             </div>
         </div>
+    );
+
+    // Wrap with context menu when not in selection mode
+    if (isSelectionMode) {
+        return content;
+    }
+
+    return (
+        <ContextMenu>
+            <ContextMenuTrigger asChild>
+                {content}
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-48">
+                <ContextMenuItem onClick={onEnterSelectionMode}>
+                    <CheckSquare className="mr-2 h-4 w-4" />
+                    Select
+                </ContextMenuItem>
+                <ContextMenuItem onClick={onDelete} variant="destructive">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Chat
+                </ContextMenuItem>
+            </ContextMenuContent>
+        </ContextMenu>
     );
 }

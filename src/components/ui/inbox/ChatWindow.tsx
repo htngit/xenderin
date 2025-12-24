@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useIntl } from 'react-intl';
 import { Message } from '@/lib/services/types';
-import { ChatBubble } from './ChatBubble';
+import { ChatBubble } from '@/components/ui/inbox/ChatBubble';
 import { ChatInput } from './ChatInput';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -104,7 +104,7 @@ export function ChatWindow({ messages, isLoading, onSendMessage }: ChatWindowPro
         }
 
         return (
-            <ScrollArea className="flex-1" ref={scrollRef}>
+            <ScrollArea className="h-full" ref={scrollRef}>
                 <div className="p-4 space-y-4">
                     {messagesByDate.map((group) => (
                         <div key={group.date}>
@@ -130,8 +130,10 @@ export function ChatWindow({ messages, isLoading, onSendMessage }: ChatWindowPro
     };
 
     return (
-        <div className="flex flex-col h-full overflow-hidden bg-muted/30">
-            {renderContent()}
+        <div className="flex flex-col flex-1 min-h-0 bg-muted/30">
+            <div className="flex-1 min-h-0">
+                {renderContent()}
+            </div>
             <ChatInput onSendMessage={onSendMessage} disabled={isLoading} />
         </div>
     );

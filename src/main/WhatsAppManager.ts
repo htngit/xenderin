@@ -103,11 +103,11 @@ export class WhatsAppManager {
                         : '.wwebjs_auth'
                 }),
                 puppeteer: puppeteerConfig,
-                // Fix for "Cannot read properties of undefined (reading 'VERSION')" error
-                // This tells the library to fetch the latest WhatsApp Web version from a remote cache
+                // Fix for "sendIq called before startComms" and other version incompatibility errors
+                // Pinning to a known stable version of WhatsApp Web
+                webVersion: '2.2412.54',
                 webVersionCache: {
-                    type: 'remote',
-                    remotePath: 'https://raw.githubusercontent.com/AntoniaSaGe/AntoniaSaGe/main/whatsapp-web-version'
+                    type: 'none'
                 }
             });
 
@@ -188,8 +188,19 @@ export class WhatsAppManager {
             console.log(`[WhatsAppManager] Loading... ${percent}% - ${message}`);
         });
 
-        // Message received event
-        this.client.on('message', async (message: Message) => {
+        // Message received event - using 'message_create' to capture ALL messages
+        // including messages sent from your own phone (e.g., replying from phone)
+        // 'message' event ONLY captures incoming messages from others
+        this.client.on('message_create', async (message: Message) => {
+            // Skip messages sent FROM this WhatsApp Web session (outbound from app)
+            // But allow messages from the same number if sent from phone (different device)
+            if (message.fromMe) {
+                // This is a message sent from this WhatsApp session (via app)
+                // We already save these when sendMessage() is called, so skip
+                console.log('[WhatsAppManager] Skipping outbound message from this session:', message.id._serialized);
+                return;
+            }
+
             console.log('[WhatsAppManager] Message received:', message.from);
 
             // Forward to MessageReceiverWorker

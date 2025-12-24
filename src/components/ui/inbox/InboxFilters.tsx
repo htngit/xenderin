@@ -2,9 +2,8 @@
 
 import { useIntl } from 'react-intl';
 import { InboxFilters, ContactGroup } from '@/lib/services/types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface InboxFiltersPanelProps {
     groups: ContactGroup[];
@@ -20,32 +19,6 @@ export function InboxFiltersPanel({
     onFilterChange
 }: InboxFiltersPanelProps) {
     const intl = useIntl();
-
-    // Toggle tag filter
-    const toggleTagFilter = (tag: string) => {
-        const currentTags = filters.tags || [];
-        const newTags = currentTags.includes(tag)
-            ? currentTags.filter(t => t !== tag)
-            : [...currentTags, tag];
-
-        onFilterChange({
-            ...filters,
-            tags: newTags.length > 0 ? newTags : undefined
-        });
-    };
-
-    // Toggle group filter
-    const toggleGroupFilter = (groupId: string) => {
-        const currentGroups = filters.group_ids || [];
-        const newGroups = currentGroups.includes(groupId)
-            ? currentGroups.filter(g => g !== groupId)
-            : [...currentGroups, groupId];
-
-        onFilterChange({
-            ...filters,
-            group_ids: newGroups.length > 0 ? newGroups : undefined
-        });
-    };
 
     // Toggle unread only filter
     const toggleUnreadOnly = () => {
@@ -84,56 +57,64 @@ export function InboxFiltersPanel({
                 </Button>
             </div>
 
-            {/* Groups */}
-            {groups.length > 0 && (
-                <div>
-                    <p className="text-sm font-medium mb-2">
-                        {intl.formatMessage({ id: 'inbox.filterByGroup', defaultMessage: 'Filter by Group' })}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                        {groups.map((group) => (
-                            <Badge
-                                key={group.id}
-                                variant={filters.group_ids?.includes(group.id) ? "default" : "outline"}
-                                className={cn(
-                                    "cursor-pointer transition-colors",
-                                    filters.group_ids?.includes(group.id) && "ring-2 ring-primary"
-                                )}
-                                style={group.color ? {
-                                    borderColor: group.color,
-                                    ...(filters.group_ids?.includes(group.id)
-                                        ? { backgroundColor: group.color, color: 'white' }
-                                        : { color: group.color })
-                                } : undefined}
-                                onClick={() => toggleGroupFilter(group.id)}
-                            >
-                                {group.name}
-                            </Badge>
-                        ))}
-                    </div>
+            {/* Groups & Tags Filters Row */}
+            <div className="flex gap-2">
+                {/* Groups Dropdown */}
+                <div className="flex-1">
+                    <Select
+                        value={filters.group_ids?.[0] || "all"}
+                        onValueChange={(value) => onFilterChange({
+                            ...filters,
+                            group_ids: value === "all" ? undefined : [value]
+                        })}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder={intl.formatMessage({ id: 'inbox.allGroups', defaultMessage: 'All Groups' })} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">
+                                {intl.formatMessage({ id: 'inbox.allGroups', defaultMessage: 'All Groups' })}
+                            </SelectItem>
+                            {groups.map((group) => (
+                                <SelectItem key={group.id} value={group.id}>
+                                    <div className="flex items-center gap-2">
+                                        <div
+                                            className="w-2 h-2 rounded-full"
+                                            style={{ backgroundColor: group.color || '#ccc' }}
+                                        />
+                                        {group.name}
+                                    </div>
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
-            )}
 
-            {/* Tags */}
-            {tags.length > 0 && (
-                <div>
-                    <p className="text-sm font-medium mb-2">
-                        {intl.formatMessage({ id: 'inbox.filterByTag', defaultMessage: 'Filter by Tag' })}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                        {tags.map((tag) => (
-                            <Badge
-                                key={tag}
-                                variant={filters.tags?.includes(tag) ? "default" : "outline"}
-                                className="cursor-pointer transition-colors"
-                                onClick={() => toggleTagFilter(tag)}
-                            >
-                                {tag}
-                            </Badge>
-                        ))}
-                    </div>
+                {/* Tags Dropdown */}
+                <div className="flex-1">
+                    <Select
+                        value={filters.tags?.[0] || "all"}
+                        onValueChange={(value) => onFilterChange({
+                            ...filters,
+                            tags: value === "all" ? undefined : [value]
+                        })}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder={intl.formatMessage({ id: 'inbox.allTags', defaultMessage: 'All Tags' })} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">
+                                {intl.formatMessage({ id: 'inbox.allTags', defaultMessage: 'All Tags' })}
+                            </SelectItem>
+                            {tags.map((tag) => (
+                                <SelectItem key={tag} value={tag}>
+                                    {tag}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
-            )}
+            </div>
 
             {/* Clear Filters */}
             {hasActiveFilters && (
