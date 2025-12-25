@@ -86,6 +86,18 @@ const createWindow = async () => {
             },
         });
 
+        // Handle external links
+        mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+            // Check if the URL is external (http/https and not localhost/127.0.0.1 if strictly needed, but generally safe to open all external links in browser)
+            // For now, simpler approach: open all new windows in default browser
+            if (url.startsWith('https:') || url.startsWith('http:')) {
+                import('electron').then(({ shell }) => {
+                    shell.openExternal(url);
+                });
+            }
+            return { action: 'deny' };
+        });
+
         // Disable ALT key menu behavior
         mainWindow.webContents.on('before-input-event', (_event, input) => {
             if (input.alt) {
