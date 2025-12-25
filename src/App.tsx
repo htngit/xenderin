@@ -17,12 +17,14 @@ import { HistoryPage } from '@/components/pages/HistoryPage';
 import { CampaignHistoryPage } from '@/components/pages/CampaignHistoryPage';
 import { GroupPage } from '@/components/pages/GroupPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
+import { InboxPage } from '@/components/pages/InboxPage';
 import { ServiceProvider } from '@/lib/services/ServiceContext';
 import { AuthResponse, PINValidation, serviceManager } from '@/lib/services';
 import { AuthService } from '@/lib/services/AuthService';
 import { syncManager } from '@/lib/sync/SyncManager';
 
 import { Toaster } from '@/components/ui/toaster';
+import { Toaster as SonnerToaster } from '@/components/ui/sonner';
 import { useToast } from '@/hooks/use-toast';
 import { UserProvider } from '@/lib/security/UserProvider';
 import { userContextManager } from '@/lib/security/UserContextManager';
@@ -75,6 +77,16 @@ const ProtectedRoutes = ({
               userName={authData?.user.name || 'User'}
               onLogout={onLogout}
             />
+          </ServiceProvider>
+        }
+      />
+
+      {/* Inbox Chat */}
+      <Route
+        path="/inbox"
+        element={
+          <ServiceProvider>
+            <InboxPage />
           </ServiceProvider>
         }
       />
@@ -150,12 +162,17 @@ const ProtectedRoutes = ({
   );
 };
 
+import { UpdateSplashScreen, AppUpdateInfo } from '@/components/pages/UpdateSplashScreen';
+
+// ... (existing imports)
+
 // Main App Logic
 const MainApp = () => {
   const { toast } = useToast();
   const [authData, setAuthData] = useState<AuthResponse | null>(null);
   const [pinData, setPinData] = useState<PINValidation | null>(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
 
   // Restore session on load
   useEffect(() => {
@@ -209,14 +226,24 @@ const MainApp = () => {
       const authService = new AuthService();
       const { quota } = await authService.getAccountMetadata(accountId);
 
+      // Check for App Updates
+      const { updateAvailable, updateInfo } = await authService.checkAppVersion();
+      if (updateAvailable && updateInfo) {
+        setUpdateInfo(updateInfo);
+        // If mandatory, we might want to prevent further interaction, 
+        // but showing the splash screen over everything works too.
+      }
+
       // 2. Update authData with the fetched quota
       setAuthData(prev => prev ? { ...prev, quota } : null);
 
       // 3. Set PIN data to unlock the UI
       setPinData(data);
 
-      // 4. Start Sync Manager (Deferred until PIN is validated)
+      // ... (existing sync logic)
       let masterUserId = authData?.user?.master_user_id;
+      // ... (rest of handlePINValidated)
+      // I will truncate here to avoid replacing too much, relying on careful placement
       if (!masterUserId) {
         // Fallback if authData isn't fully ready, though it should be
         const user = await authService.getCurrentUser();
@@ -341,6 +368,7 @@ const MainApp = () => {
   };
 
   const handleLogout = async () => {
+    // ... (existing logout logic)
     const authService = new AuthService();
     try {
       await authService.logout();
@@ -349,6 +377,7 @@ const MainApp = () => {
     } finally {
       setAuthData(null);
       setPinData(null);
+      setUpdateInfo(null); // Clear update info
       syncManager.setMasterUserId(null);
     }
   };
@@ -359,11 +388,20 @@ const MainApp = () => {
 
   const isAuthenticated = !!authData?.user;
   const isPINValidated = !!pinData?.is_valid;
+  const showUpdateSplash = !!updateInfo;
 
   return (
     <Router>
       <RouteDebug />
       <div className="min-h-screen bg-background font-sans antialiased">
+        {showUpdateSplash && (
+          <UpdateSplashScreen
+            updateInfo={updateInfo}
+            currentVersion={__APP_VERSION__}
+            onLater={() => !updateInfo.is_mandatory && setUpdateInfo(null)}
+          />
+        )}
+
         {!isAuthenticated ? (
           // 1. Not Authenticated -> Public Routes
           <PublicRoutes onLoginSuccess={handleLoginSuccess} />
@@ -385,6 +423,7 @@ const MainApp = () => {
           />
         )}
         <Toaster />
+        <SonnerToaster position="top-right" richColors />
       </div>
     </Router>
   );

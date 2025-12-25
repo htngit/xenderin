@@ -467,4 +467,69 @@ export class AuthService {
       };
     }
   }
+
+  // Check Application Version
+  async checkAppVersion(): Promise<{
+    updateAvailable: boolean;
+    updateInfo?: any
+  }> {
+    try {
+      console.log('Checking app version...');
+
+      // Get the latest version from Supabase
+      const { data, error } = await supabase
+        .from('app_versions')
+        .select('*')
+        .eq('is_latest', true)
+        .eq('platform', 'all') // Assuming 'all' or specific platform like 'windows'
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No latest version found
+          console.log('No latest version info found in database.');
+          return { updateAvailable: false };
+        }
+        console.error('Error fetching app version:', error);
+        return { updateAvailable: false };
+      }
+
+      if (!data) return { updateAvailable: false };
+
+      const remoteVersion = data.version;
+      const currentVersion = __APP_VERSION__;
+
+      console.log(`Current version: ${currentVersion}, Remote version: ${remoteVersion}`);
+
+      // Simple semantic version comparison
+      if (this.isVersionOutdated(currentVersion, remoteVersion)) {
+        return {
+          updateAvailable: true,
+          updateInfo: data
+        };
+      }
+
+      return { updateAvailable: false };
+    } catch (error) {
+      console.error('Check app version error:', error);
+      return { updateAvailable: false };
+    }
+  }
+
+  private isVersionOutdated(current: string, remote: string): boolean {
+    if (!current || !remote) return false;
+
+    const v1 = current.split('.').map(Number);
+    const v2 = remote.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+      const num1 = v1[i] || 0;
+      const num2 = v2[i] || 0;
+
+      if (num1 < num2) return true;
+      if (num1 > num2) return false;
+    }
+
+    return false;
+  }
 }

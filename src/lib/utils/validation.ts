@@ -4,7 +4,7 @@
  * for consistent data integrity across all services.
  */
 
-import { Contact, ContactGroup, Template, ActivityLog, AssetFile, Quota } from '../services/types';
+import { Contact, ContactGroup, Template, ActivityLog, AssetFile, Quota, Message } from '../services/types';
 import { LocalProfile, LocalQuotaReservation } from '../db';
 
 /**
@@ -434,6 +434,50 @@ export function validateQuotaReservation(data: any): LocalQuotaReservation | nul
 }
 
 /**
+ * Validate message data with comprehensive type checking
+ * Matches the Message interface from types.ts
+ */
+export function validateMessage(data: any): Message | null {
+  if (!isValidJSONObject(data)) {
+    console.error('Message data is not a valid object:', data);
+    return null;
+  }
+
+  try {
+    const validDirections = ['inbound', 'outbound'] as const;
+    const direction = validDirections.includes(data.direction) ? data.direction : 'outbound';
+
+    // Valid statuses as per Message interface: 'received' | 'sent' | 'delivered' | 'read' | 'failed'
+    const validStatuses = ['received', 'sent', 'delivered', 'read', 'failed'] as const;
+    const status = validStatuses.includes(data.status) ? data.status : 'sent';
+
+    const validated: Message = {
+      id: isValidUUID(data.id) ? data.id : crypto.randomUUID(),
+      master_user_id: isValidUUID(data.master_user_id) ? data.master_user_id : '',
+      contact_id: data.contact_id && isValidUUID(data.contact_id) ? data.contact_id : undefined,
+      contact_phone: sanitizeString(data.contact_phone, 'contact_phone', 20),
+      contact_name: data.contact_name ? sanitizeString(data.contact_name, 'contact_name', 255) : undefined,
+      direction,
+      content: data.content ? sanitizeString(data.content, 'content', 10000) : undefined,
+      message_type: sanitizeString(data.message_type || data.type || 'text', 'message_type', 50),
+      has_media: sanitizeBoolean(data.has_media, 'has_media'),
+      media_url: data.media_url ? sanitizeString(data.media_url, 'media_url', 1000) : undefined,
+      status,
+      whatsapp_message_id: data.whatsapp_message_id ? sanitizeString(data.whatsapp_message_id, 'whatsapp_message_id', 100) : undefined,
+      activity_log_id: data.activity_log_id && isValidUUID(data.activity_log_id) ? data.activity_log_id : undefined,
+      sent_at: String(data.sent_at || new Date().toISOString()),
+      created_at: String(data.created_at || new Date().toISOString()),
+      updated_at: String(data.updated_at || new Date().toISOString())
+    };
+
+    return validated;
+  } catch (error) {
+    console.error('Error validating message data:', error, data);
+    return null;
+  }
+}
+
+/**
  * Generic data validation function that chooses the appropriate validator
  */
 export function validateData<T>(data: any, type: 'contact' | 'group' | 'template' | 'activityLog' | 'assetFile' | 'quota' | 'profile' | 'quotaReservation' | string): T | null {
@@ -463,6 +507,9 @@ export function validateData<T>(data: any, type: 'contact' | 'group' | 'template
     case 'quotaReservation':
     case 'quotaReservations':
       return validateQuotaReservation(data) as T;
+    case 'message':
+    case 'messages':
+      return validateMessage(data) as T;
     default:
       console.error('Unknown data type for validation:', type);
       return null;

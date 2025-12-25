@@ -7,6 +7,8 @@ import { AnimatedButton } from '@/components/ui/animated-button';
 import { FadeIn } from '@/components/ui/animations';
 import { PINValidation } from '@/lib/services/types';
 import { Lock, Shield, User } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import {
   Select,
   SelectContent,
@@ -18,38 +20,101 @@ import {
 interface PINModalProps {
   onPINValidated: (pinData: PINValidation, accountId: string) => void;
   userName: string;
-  userId?: string; // Optional userId to identify the owner account
+  userId?: string;
 }
 
-interface AccountOption {
+interface ProfileOption {
   id: string;
   name: string;
   role: string;
+  email: string;
+  pin: string;
 }
 
 export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
   const [pin, setPin] = useState(['', '', '', '', '', '']);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
-  const [accounts, setAccounts] = useState<AccountOption[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<string>('');
+  const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(true);
 
-  // Initialize accounts
+  // Fetch profiles from Supabase
   useEffect(() => {
-    // In a real implementation, this would fetch teams/accounts the user belongs to
-    // For now, we default to the Owner account as requested
-    const ownerAccount: AccountOption = {
-      id: userId || 'owner-account', // Use actual userId if available
-      name: 'Owner', // Default display name as requested
-      role: 'owner'
+    const fetchProfiles = async () => {
+      if (!userId) {
+        setIsLoadingProfiles(false);
+        return;
+      }
+
+      try {
+        setIsLoadingProfiles(true);
+
+        // Fetch the current user's profile and any staff profiles under this master
+        const { data, error: fetchError } = await supabase
+          .from('profiles')
+          .select('id, name, role, email, pin')
+          .or(`id.eq.${userId},master_user_id.eq.${userId}`);
+
+        if (fetchError) {
+          console.error('Error fetching profiles:', fetchError);
+          // Fallback to default owner profile
+          setProfiles([{
+            id: userId,
+            name: 'Owner',
+            role: 'owner',
+            email: '',
+            pin: '123456'
+          }]);
+          setSelectedProfile(userId);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          const profileOptions: ProfileOption[] = data.map(p => ({
+            id: p.id,
+            name: p.name || 'Unknown',
+            role: p.role || 'staff',
+            email: p.email || '',
+            pin: p.pin || '123456'
+          }));
+
+          setProfiles(profileOptions);
+          // Select current user's profile by default
+          const currentProfile = profileOptions.find(p => p.id === userId);
+          setSelectedProfile(currentProfile?.id || profileOptions[0]?.id || '');
+        } else {
+          // No profiles found, create default
+          setProfiles([{
+            id: userId,
+            name: userName || 'Owner',
+            role: 'owner',
+            email: '',
+            pin: '123456'
+          }]);
+          setSelectedProfile(userId);
+        }
+      } catch (err) {
+        console.error('Error in fetchProfiles:', err);
+        // Fallback
+        setProfiles([{
+          id: userId,
+          name: 'Owner',
+          role: 'owner',
+          email: '',
+          pin: '123456'
+        }]);
+        setSelectedProfile(userId);
+      } finally {
+        setIsLoadingProfiles(false);
+      }
     };
 
-    setAccounts([ownerAccount]);
-    setSelectedAccount(ownerAccount.id);
+    fetchProfiles();
   }, [userId, userName]);
 
   const handlePINChange = (index: number, value: string) => {
-    if (value.length > 1) return; // Only allow single digit
+    if (value.length > 1) return;
 
     const newPin = [...pin];
     newPin[index] = value;
@@ -63,14 +128,12 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
       }
     }
 
-    // Clear error when user starts typing
     if (error) {
       setError('');
     }
   };
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    // Handle backspace
     if (e.key === 'Backspace' && !pin[index] && index > 0) {
       const prevInput = document.getElementById(`pin-${index - 1}`) as HTMLInputElement;
       if (prevInput) {
@@ -89,8 +152,8 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
       return;
     }
 
-    if (!selectedAccount) {
-      setError('Please select an account');
+    if (!selectedProfile) {
+      setError('Please select a profile');
       return;
     }
 
@@ -98,21 +161,27 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
     setError('');
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Find the selected profile
+      const profile = profiles.find(p => p.id === selectedProfile);
 
-      // Default PIN Logic for Owner:
-      // If the user is an Owner and no specific PIN is set (simulated here),
-      // we accept '123456' as the default PIN to allow initial access.
-      if (pinString === '123456') {
+      if (!profile) {
+        setError('Profile not found');
+        return;
+      }
+
+      // Validate PIN against the profile's stored PIN
+      if (pinString === profile.pin) {
+        toast.success(`Welcome, ${profile.name}!`);
         onPINValidated({
           is_valid: true,
-          role: 'owner'
-        }, selectedAccount);
+          role: profile.role as 'owner' | 'staff'
+        }, selectedProfile);
       } else {
-        setError('Invalid PIN. Default PIN for Owner is 123456.');
+        toast.error('Invalid PIN');
+        setError('Invalid PIN. Please try again.');
       }
     } catch (err) {
+      console.error('PIN validation error:', err);
       setError('PIN validation failed. Please try again.');
     } finally {
       setIsLoading(false);
@@ -127,7 +196,6 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
       const newPin = pastedData.split('').concat(Array(6 - pastedData.length).fill(''));
       setPin(newPin);
 
-      // Focus last filled input
       const lastIndex = pastedData.length - 1;
       if (lastIndex < 6) {
         const input = document.getElementById(`pin-${lastIndex}`) as HTMLInputElement;
@@ -150,35 +218,39 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
               Enter PIN
             </CardTitle>
             <CardDescription>
-              Welcome back, {userName}! Please select your account and enter PIN
+              Welcome back, {userName}! Please select your profile and enter PIN
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
 
-              {/* Account Selection */}
+              {/* Profile Selection */}
               <div className="space-y-2">
-                <Label>Select Account</Label>
-                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <span>{account.name}</span>
-                          {account.role === 'owner' && (
-                            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                              Owner
-                            </span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Select Profile</Label>
+                {isLoadingProfiles ? (
+                  <div className="h-10 bg-muted animate-pulse rounded-md" />
+                ) : (
+                  <Select value={selectedProfile} onValueChange={setSelectedProfile}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select profile" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profiles.map((profile) => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span>{profile.name}</span>
+                            {profile.role === 'owner' && (
+                              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                Owner
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
               <div className="space-y-4">
@@ -212,14 +284,14 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
                 <AnimatedButton
                   type="submit"
                   className="w-full"
-                  disabled={isLoading}
+                  disabled={isLoading || isLoadingProfiles}
                   animation="scale"
                 >
                   {isLoading ? 'Validating...' : 'Continue'}
                 </AnimatedButton>
 
                 <div className="text-center text-sm text-muted-foreground">
-                  Demo PIN: <span className="font-mono font-semibold">123456</span>
+                  Default PIN: <span className="font-mono font-semibold">123456</span>
                 </div>
               </div>
 
@@ -228,7 +300,7 @@ export function PINModal({ onPINValidated, userName, userId }: PINModalProps) {
                   <Lock className="h-3 w-3" />
                   <span>Secure PIN Verification</span>
                 </div>
-                <div>Default role: Owner</div>
+                <div>You can change your PIN in Settings</div>
               </div>
             </form>
           </CardContent>

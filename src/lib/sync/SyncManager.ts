@@ -1261,7 +1261,9 @@ export class SyncManager {
       profiles: 'profiles',
       payments: 'payments',
       quotaReservations: 'quota_reservations',
-      userSessions: 'user_sessions'
+      userSessions: 'user_sessions',
+      teams: 'teams',                      // Added: maps to 'teams' table
+      messages: 'messages'                 // Added: maps to 'messages' table
     };
 
     return mapping[tableName] || tableName;

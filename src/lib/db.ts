@@ -187,6 +187,29 @@ export interface LocalMessageJob {
   _deleted?: boolean;
 }
 
+export interface LocalMessage {
+  id: string;
+  master_user_id: string;
+  contact_id?: string;
+  contact_phone: string;
+  contact_name?: string;
+  direction: 'inbound' | 'outbound';
+  content?: string;
+  message_type: string;
+  has_media: boolean;
+  media_url?: string;
+  status: 'received' | 'sent' | 'delivered' | 'read' | 'failed';
+  whatsapp_message_id?: string;
+  activity_log_id?: string;
+  sent_at: string;
+  created_at: string;
+  updated_at: string;
+  _syncStatus: 'pending' | 'synced' | 'conflict' | 'error';
+  _lastModified: string;
+  _version: number;
+  _deleted?: boolean;
+}
+
 export interface SyncOperation {
   id?: number;
   table: string;
@@ -216,6 +239,7 @@ export class AppDatabase extends Dexie {
   asset_blobs!: Table<LocalAssetBlob>;
   teams!: Table<LocalTeam>;
   messageJobs!: Table<LocalMessageJob>;
+  messages!: Table<LocalMessage>;
 
   constructor() {
     super('XenderInDatabase');
@@ -328,6 +352,24 @@ export class AppDatabase extends Dexie {
       messageJobs: '&id, reservation_id, user_id, master_user_id, status, created_at'
     });
 
+    // Version 8 - Add messages table for Inbox Chat feature
+    this.version(8).stores({
+      contacts: '&id, name, phone, group_id, master_user_id, created_by, tags, notes, is_blocked, last_interaction, _syncStatus, _lastModified, _version, _deleted',
+      groups: '&id, name, master_user_id, created_by, _syncStatus, _lastModified, _version, _deleted',
+      templates: '&id, name, master_user_id, category, _syncStatus, _lastModified, _version, _deleted',
+      activityLogs: '&id, user_id, master_user_id, contact_group_id, template_id, status, template_name, total_contacts, success_count, failed_count, delay_range, scheduled_for, started_at, completed_at, error_message, metadata, _syncStatus, _lastModified, _version, _deleted',
+      assets: '&id, name, type, category, master_user_id, file_name, uploaded_by, mime_type, is_public, _syncStatus, _lastModified, _version, _deleted',
+      quotas: '&id, user_id, master_user_id, plan_type, messages_limit, messages_used, reset_date, is_active, _syncStatus, _lastModified, _version',
+      quotaReservations: '&id, user_id, master_user_id, status, _syncStatus, _lastModified, _version',
+      profiles: '&id, email, name, master_user_id, phone_number, avatar_url, role, is_active, _syncStatus, _lastModified, _version',
+      payments: '&id, user_id, master_user_id, payment_id, duitku_transaction_id, amount, currency, status, payment_method, qr_url, payment_url, expires_at, completed_at, plan_type, _syncStatus, _lastModified, _version',
+      userSessions: '&id, master_user_id, session_token, expires_at, last_active, is_active, _syncStatus, _lastModified, _version',
+      syncQueue: '++id, table, operation, recordId, status, timestamp, retryCount',
+      asset_blobs: '&asset_id, size, cached_at, last_accessed',
+      messageJobs: '&id, reservation_id, user_id, master_user_id, status, created_at',
+      messages: '&id, master_user_id, contact_id, contact_phone, direction, status, whatsapp_message_id, activity_log_id, sent_at, _syncStatus, _lastModified, _version, _deleted'
+    });
+
     // Hooks for automatic sync status and timestamp management using standardized utilities
     this.contacts.hook('creating', this.onCreating.bind(this));
     this.contacts.hook('updating', this.onUpdating.bind(this));
@@ -375,6 +417,10 @@ export class AppDatabase extends Dexie {
     this.teams.hook('creating', this.onCreating.bind(this));
     this.teams.hook('updating', this.onUpdating.bind(this));
     this.teams.hook('deleting', this.onDeleting.bind(this));
+
+    this.messages.hook('creating', this.onCreating.bind(this));
+    this.messages.hook('updating', this.onUpdating.bind(this));
+    this.messages.hook('deleting', this.onDeleting.bind(this));
   }
 
   /**
@@ -450,7 +496,8 @@ export class AppDatabase extends Dexie {
       'profiles',
       'payments',
       'userSessions',     // maps to 'user_sessions' table
-      'teams'             // maps to 'teams' table
+      'teams',            // maps to 'teams' table
+      'messages'          // maps to 'messages' table
     ];
   }
 
@@ -477,6 +524,7 @@ export class AppDatabase extends Dexie {
       this.teams.where('master_user_id').equals(masterUserId).delete(),
       // Note: syncQueue doesn't have master_user_id field, so we skip it
       this.messageJobs.where('master_user_id').equals(masterUserId).delete(),
+      this.messages.where('master_user_id').equals(masterUserId).delete(),
     ]);
 
     // Delete asset blobs for the user's assets
@@ -508,6 +556,7 @@ export class AppDatabase extends Dexie {
         this.teams.where('master_user_id').equals(masterUserId).delete(),
         // Note: syncQueue doesn't have master_user_id field, so we skip it
         this.messageJobs.where('master_user_id').equals(masterUserId).delete(),
+        this.messages.where('master_user_id').equals(masterUserId).delete(),
       ];
 
       // Execute all deletion operations in parallel
@@ -544,7 +593,8 @@ export class AppDatabase extends Dexie {
         this.teams.clear(),
         this.syncQueue.clear(),
         this.asset_blobs.clear(),
-        this.messageJobs.clear()
+        this.messageJobs.clear(),
+        this.messages.clear()
       ]);
 
       console.log('All data cleared successfully');

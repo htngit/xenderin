@@ -7,6 +7,7 @@ export { TemplateService } from './TemplateService';
 export { HistoryService } from './HistoryService';
 export { GroupService } from './GroupService';
 export { AssetService, type AssetFile } from './AssetService';
+export { MessageService } from './MessageService';
 
 // Export types
 export * from './types';
