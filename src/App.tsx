@@ -24,6 +24,7 @@ import { AuthService } from '@/lib/services/AuthService';
 import { syncManager } from '@/lib/sync/SyncManager';
 
 import { Toaster } from '@/components/ui/toaster';
+import { Toaster as SonnerToaster } from '@/components/ui/sonner';
 import { useToast } from '@/hooks/use-toast';
 import { UserProvider } from '@/lib/security/UserProvider';
 import { userContextManager } from '@/lib/security/UserContextManager';
@@ -396,6 +397,7 @@ const MainApp = () => {
           />
         )}
         <Toaster />
+        <SonnerToaster position="top-right" richColors />
       </div>
     </Router>
   );
