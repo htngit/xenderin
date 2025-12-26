@@ -4,9 +4,12 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { FormattedMessage, useIntl } from 'react-intl';
 
 export function CacheManagementCard() {
+    const intl = useIntl();
     const [isClearing, setIsClearing] = useState(false);
+    const [lastCleared, setLastCleared] = useState<Date | null>(null);
 
     const handleClearCache = async () => {
         setIsClearing(true);
@@ -27,9 +30,14 @@ export function CacheManagementCard() {
                 localStorage.removeItem(key);
             });
 
-            toast.success('Cache cleared successfully');
+            const now = new Date();
+            setLastCleared(now);
+            toast.success(intl.formatMessage({ id: 'settings.database.cache.toast.success' }));
         } catch (error) {
-            toast.error('Failed to clear cache: ' + (error as Error).message);
+            toast.error(intl.formatMessage(
+                { id: 'settings.database.cache.toast.error' },
+                { error: (error as Error).message }
+            ));
         } finally {
             setIsClearing(false);
         }
@@ -38,9 +46,11 @@ export function CacheManagementCard() {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Cache Management</CardTitle>
+                <CardTitle>
+                    <FormattedMessage id="settings.database.cache.title" defaultMessage="Cache Management" />
+                </CardTitle>
                 <CardDescription>
-                    Clear temporary data and cached files
+                    <FormattedMessage id="settings.database.cache.desc" defaultMessage="Clear temporary data and cached files" />
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -48,10 +58,10 @@ export function CacheManagementCard() {
                     <AlertTriangle className="h-5 w-5 text-orange-500 mt-0.5" />
                     <div className="flex-1">
                         <p className="text-sm font-medium text-orange-900 dark:text-orange-100">
-                            Warning
+                            <FormattedMessage id="settings.database.cache.warning.title" defaultMessage="Warning" />
                         </p>
                         <p className="text-sm text-orange-700 dark:text-orange-300">
-                            Clearing cache will remove temporary files and may require re-downloading some data. Your messages and contacts will not be affected.
+                            <FormattedMessage id="settings.database.cache.warning.desc" defaultMessage="Clearing cache will remove temporary files and may require re-downloading some data." />
                         </p>
                     </div>
                 </div>
@@ -60,40 +70,58 @@ export function CacheManagementCard() {
                     <AlertDialogTrigger asChild>
                         <Button variant="destructive" className="w-full" disabled={isClearing}>
                             <Trash2 className="h-4 w-4 mr-2" />
-                            Clear Cache
+                            <FormattedMessage id="settings.database.cache.btn_clear" defaultMessage="Clear Cache" />
                         </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                         <AlertDialogHeader>
-                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                            <AlertDialogTitle>
+                                <FormattedMessage id="settings.database.cache.dialog.title" defaultMessage="Are you sure?" />
+                            </AlertDialogTitle>
                             <AlertDialogDescription>
-                                This will clear all cached data.
+                                <FormattedMessage id="settings.database.cache.dialog.desc" defaultMessage="This will clear all cached data." />
                             </AlertDialogDescription>
                         </AlertDialogHeader>
 
                         <div className="text-sm text-muted-foreground">
-                            <p className="mb-2">This includes:</p>
+                            <p className="mb-2">
+                                <FormattedMessage id="settings.database.cache.dialog.includes" defaultMessage="This includes:" />
+                            </p>
                             <ul className="list-disc list-inside space-y-1 mb-4">
-                                <li>Temporary files</li>
-                                <li>Cached images and media</li>
-                                <li>Application cache</li>
+                                <li><FormattedMessage id="settings.database.cache.dialog.item1" defaultMessage="Temporary files" /></li>
+                                <li><FormattedMessage id="settings.database.cache.dialog.item2" defaultMessage="Cached images and media" /></li>
+                                <li><FormattedMessage id="settings.database.cache.dialog.item3" defaultMessage="Application cache" /></li>
                             </ul>
                             <p>
-                                Your messages, contacts, and settings will remain safe.
+                                <FormattedMessage id="settings.database.cache.dialog.safe" defaultMessage="Your messages, contacts, and settings will remain safe." />
                             </p>
                         </div>
 
                         <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogCancel>
+                                <FormattedMessage id="settings.database.cache.dialog.cancel" defaultMessage="Cancel" />
+                            </AlertDialogCancel>
                             <AlertDialogAction onClick={handleClearCache}>
-                                Clear Cache
+                                <FormattedMessage id="settings.database.cache.dialog.confirm" defaultMessage="Clear Cache" />
                             </AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
 
                 <p className="text-xs text-muted-foreground text-center">
-                    Last cleared: Never
+                    {lastCleared ? (
+                        <FormattedMessage
+                            id="settings.database.cache.last_cleared"
+                            defaultMessage="Last cleared: {time}"
+                            values={{ time: lastCleared.toLocaleTimeString() }}
+                        />
+                    ) : (
+                        <FormattedMessage
+                            id="settings.database.cache.last_cleared"
+                            defaultMessage="Last cleared: {time}"
+                            values={{ time: intl.formatMessage({ id: 'settings.database.sync.never_time', defaultMessage: 'Never' }) }}
+                        />
+                    )}
                 </p>
             </CardContent>
         </Card>

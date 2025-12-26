@@ -3,6 +3,7 @@ import { SyncStatusCard } from './SyncStatusCard';
 import { DatabaseStatsCard } from './DatabaseStatsCard';
 import { CacheManagementCard } from './CacheManagementCard';
 import { syncManager } from '@/lib/sync/SyncManager';
+import { FormattedMessage } from 'react-intl';
 
 export function DatabaseTab() {
     const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'never'>('never');
@@ -49,9 +50,11 @@ export function DatabaseTab() {
     return (
         <div className="space-y-6">
             <div>
-                <h2 className="text-2xl font-bold tracking-tight">Database & Sync</h2>
+                <h2 className="text-2xl font-bold tracking-tight">
+                    <FormattedMessage id="settings.database.title" defaultMessage="Database & Sync" />
+                </h2>
                 <p className="text-muted-foreground">
-                    Manage your local database and synchronization settings
+                    <FormattedMessage id="settings.database.desc" defaultMessage="Manage your local database and synchronization settings" />
                 </p>
             </div>
 

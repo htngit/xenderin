@@ -6,8 +6,10 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase';
 import { Loader2, Key, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useIntl, FormattedMessage } from 'react-intl';
 
 export function PasswordChangeForm() {
+    const intl = useIntl();
     const [isChanging, setIsChanging] = useState(false);
     const [formData, setFormData] = useState({
         currentPassword: '',
@@ -39,17 +41,17 @@ export function PasswordChangeForm() {
 
         // Validation
         if (formData.newPassword !== formData.confirmPassword) {
-            toast.error('New passwords do not match');
+            toast.error(intl.formatMessage({ id: 'settings.password.toast.mismatch' }));
             return;
         }
 
         if (formData.newPassword.length < 8) {
-            toast.error('Password must be at least 8 characters long');
+            toast.error(intl.formatMessage({ id: 'settings.password.toast.length' }));
             return;
         }
 
         if (passwordStrength === 'weak') {
-            toast.error('Password is too weak. Please use a stronger password.');
+            toast.error(intl.formatMessage({ id: 'settings.password.toast.weak' }));
             return;
         }
 
@@ -65,14 +67,17 @@ export function PasswordChangeForm() {
                 throw error;
             }
 
-            toast.success('Password changed successfully');
+            toast.success(intl.formatMessage({ id: 'settings.password.toast.success' }));
             setFormData({
                 currentPassword: '',
                 newPassword: '',
                 confirmPassword: '',
             });
         } catch (error: any) {
-            toast.error(`Failed to change password: ${error.message}`);
+            toast.error(intl.formatMessage(
+                { id: 'settings.password.toast.error' },
+                { error: error.message }
+            ));
         } finally {
             setIsChanging(false);
         }
@@ -97,15 +102,19 @@ export function PasswordChangeForm() {
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Change Password</CardTitle>
+                <CardTitle>
+                    <FormattedMessage id="settings.password.title" defaultMessage="Change Password" />
+                </CardTitle>
                 <CardDescription>
-                    Update your password to keep your account secure
+                    <FormattedMessage id="settings.password.desc" defaultMessage="Update your password to keep your account secure" />
                 </CardDescription>
             </CardHeader>
             <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
-                        <Label htmlFor="currentPassword">Current Password</Label>
+                        <Label htmlFor="currentPassword">
+                            <FormattedMessage id="settings.password.current" defaultMessage="Current Password" />
+                        </Label>
                         <Input
                             id="currentPassword"
                             type="password"
@@ -116,7 +125,9 @@ export function PasswordChangeForm() {
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="newPassword">New Password</Label>
+                        <Label htmlFor="newPassword">
+                            <FormattedMessage id="settings.password.new" defaultMessage="New Password" />
+                        </Label>
                         <Input
                             id="newPassword"
                             type="password"
@@ -139,7 +150,7 @@ export function PasswordChangeForm() {
                                         ) : (
                                             <X className="h-3 w-3 text-red-500" />
                                         )}
-                                        <span>At least 8 characters</span>
+                                        <span><FormattedMessage id="settings.password.req.length" defaultMessage="At least 8 characters" /></span>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         {/[a-z]/.test(formData.newPassword) && /[A-Z]/.test(formData.newPassword) ? (
@@ -147,7 +158,7 @@ export function PasswordChangeForm() {
                                         ) : (
                                             <X className="h-3 w-3 text-red-500" />
                                         )}
-                                        <span>Uppercase and lowercase letters</span>
+                                        <span><FormattedMessage id="settings.password.req.case" defaultMessage="Uppercase and lowercase letters" /></span>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         {/\d/.test(formData.newPassword) ? (
@@ -155,7 +166,7 @@ export function PasswordChangeForm() {
                                         ) : (
                                             <X className="h-3 w-3 text-red-500" />
                                         )}
-                                        <span>At least one number</span>
+                                        <span><FormattedMessage id="settings.password.req.number" defaultMessage="At least one number" /></span>
                                     </div>
                                 </div>
                             </div>
@@ -163,7 +174,9 @@ export function PasswordChangeForm() {
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                        <Label htmlFor="confirmPassword">
+                            <FormattedMessage id="settings.password.confirm" defaultMessage="Confirm New Password" />
+                        </Label>
                         <Input
                             id="confirmPassword"
                             type="password"
@@ -176,12 +189,16 @@ export function PasswordChangeForm() {
                                 {formData.newPassword === formData.confirmPassword ? (
                                     <>
                                         <Check className="h-3 w-3 text-green-500" />
-                                        <span className="text-green-500">Passwords match</span>
+                                        <span className="text-green-500">
+                                            <FormattedMessage id="settings.password.match" defaultMessage="Passwords match" />
+                                        </span>
                                     </>
                                 ) : (
                                     <>
                                         <X className="h-3 w-3 text-red-500" />
-                                        <span className="text-red-500">Passwords do not match</span>
+                                        <span className="text-red-500">
+                                            <FormattedMessage id="settings.password.mismatch" defaultMessage="Passwords do not match" />
+                                        </span>
                                     </>
                                 )}
                             </div>
@@ -192,12 +209,12 @@ export function PasswordChangeForm() {
                         {isChanging ? (
                             <>
                                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                Changing Password...
+                                <FormattedMessage id="settings.password.changing" defaultMessage="Changing Password..." />
                             </>
                         ) : (
                             <>
                                 <Key className="h-4 w-4 mr-2" />
-                                Change Password
+                                <FormattedMessage id="settings.password.btn.change" defaultMessage="Change Password" />
                             </>
                         )}
                     </Button>

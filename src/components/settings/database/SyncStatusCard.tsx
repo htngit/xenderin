@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RefreshCw, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import { useIntl, FormattedMessage } from 'react-intl';
 
 interface SyncStatusCardProps {
     lastSyncTime?: Date;
@@ -12,15 +13,19 @@ interface SyncStatusCardProps {
 }
 
 export function SyncStatusCard({ lastSyncTime, syncStatus, onManualSync }: SyncStatusCardProps) {
+    const intl = useIntl();
     const [isSyncing, setIsSyncing] = useState(false);
 
     const handleSync = async () => {
         setIsSyncing(true);
         try {
             await onManualSync();
-            toast.success('Sync completed successfully');
+            toast.success(intl.formatMessage({ id: 'settings.database.sync.toast.success' }));
         } catch (error) {
-            toast.error('Sync failed: ' + (error as Error).message);
+            toast.error(intl.formatMessage(
+                { id: 'settings.database.sync.toast.error' },
+                { error: (error as Error).message }
+            ));
         } finally {
             setIsSyncing(false);
         }
@@ -32,45 +37,45 @@ export function SyncStatusCard({ lastSyncTime, syncStatus, onManualSync }: SyncS
                 return (
                     <Badge variant="outline" className="gap-1">
                         <CheckCircle className="h-3 w-3 text-green-500" />
-                        Synced
+                        <FormattedMessage id="settings.database.sync.synced" defaultMessage="Synced" />
                     </Badge>
                 );
             case 'syncing':
                 return (
                     <Badge variant="outline" className="gap-1">
                         <RefreshCw className="h-3 w-3 animate-spin text-blue-500" />
-                        Syncing...
+                        <FormattedMessage id="settings.database.sync.syncing" defaultMessage="Syncing..." />
                     </Badge>
                 );
             case 'error':
                 return (
                     <Badge variant="destructive" className="gap-1">
                         <AlertCircle className="h-3 w-3" />
-                        Error
+                        <FormattedMessage id="settings.database.sync.error" defaultMessage="Error" />
                     </Badge>
                 );
             default:
                 return (
                     <Badge variant="secondary" className="gap-1">
                         <Clock className="h-3 w-3" />
-                        Never Synced
+                        <FormattedMessage id="settings.database.sync.never" defaultMessage="Never Synced" />
                     </Badge>
                 );
         }
     };
 
     const formatLastSync = () => {
-        if (!lastSyncTime) return 'Never';
+        if (!lastSyncTime) return intl.formatMessage({ id: 'settings.database.sync.never_time', defaultMessage: 'Never' });
         const now = new Date();
         const diff = now.getTime() - lastSyncTime.getTime();
         const minutes = Math.floor(diff / 60000);
         const hours = Math.floor(minutes / 60);
         const days = Math.floor(hours / 24);
 
-        if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
-        if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-        if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-        return 'Just now';
+        if (days > 0) return intl.formatMessage({ id: 'settings.database.sync.ago_days' }, { count: days });
+        if (hours > 0) return intl.formatMessage({ id: 'settings.database.sync.ago_hours' }, { count: hours });
+        if (minutes > 0) return intl.formatMessage({ id: 'settings.database.sync.ago_minutes' }, { count: minutes });
+        return intl.formatMessage({ id: 'settings.database.sync.just_now', defaultMessage: 'Just now' });
     };
 
     return (
@@ -78,9 +83,11 @@ export function SyncStatusCard({ lastSyncTime, syncStatus, onManualSync }: SyncS
             <CardHeader>
                 <div className="flex items-center justify-between">
                     <div>
-                        <CardTitle>Sync Status</CardTitle>
+                        <CardTitle>
+                            <FormattedMessage id="settings.database.sync.title" defaultMessage="Sync Status" />
+                        </CardTitle>
                         <CardDescription>
-                            Synchronization between local database and Cloud
+                            <FormattedMessage id="settings.database.sync.desc" defaultMessage="Synchronization between local database and Cloud" />
                         </CardDescription>
                     </div>
                     {getStatusBadge()}
@@ -89,7 +96,9 @@ export function SyncStatusCard({ lastSyncTime, syncStatus, onManualSync }: SyncS
             <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-sm font-medium">Last Sync</p>
+                        <p className="text-sm font-medium">
+                            <FormattedMessage id="settings.database.sync.last_sync" defaultMessage="Last Sync" />
+                        </p>
                         <p className="text-sm text-muted-foreground">{formatLastSync()}</p>
                     </div>
                     <Button
@@ -100,20 +109,20 @@ export function SyncStatusCard({ lastSyncTime, syncStatus, onManualSync }: SyncS
                         {isSyncing ? (
                             <>
                                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                Syncing...
+                                <FormattedMessage id="settings.database.sync.syncing" defaultMessage="Syncing..." />
                             </>
                         ) : (
                             <>
                                 <RefreshCw className="h-4 w-4 mr-2" />
-                                Sync Now
+                                <FormattedMessage id="settings.database.sync.btn_sync" defaultMessage="Sync Now" />
                             </>
                         )}
                     </Button>
                 </div>
 
                 <div className="text-xs text-muted-foreground">
-                    <p>• Auto-sync runs every 5 minutes when online</p>
-                    <p>• Manual sync updates all data from Cloud</p>
+                    <p><FormattedMessage id="settings.database.sync.info_auto" defaultMessage="• Auto-sync runs every 5 minutes when online" /></p>
+                    <p><FormattedMessage id="settings.database.sync.info_manual" defaultMessage="• Manual sync updates all data from Cloud" /></p>
                 </div>
             </CardContent>
         </Card>

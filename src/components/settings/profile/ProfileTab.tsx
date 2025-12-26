@@ -9,8 +9,10 @@ import { supabase } from '@/lib/supabase';
 import { Loader2, Edit, Save, X, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { userContextManager } from '@/lib/security/UserContextManager';
+import { useIntl, FormattedMessage } from 'react-intl';
 
 export function ProfileTab() {
+    const intl = useIntl();
     const [user, setUser] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
@@ -54,11 +56,14 @@ export function ProfileTab() {
 
             if (error) throw error;
 
-            toast.success('Profile updated successfully');
+            toast.success(intl.formatMessage({ id: 'settings.profile.toast.update_success' }));
             setIsEditing(false);
             await fetchUserProfile();
         } catch (error: any) {
-            toast.error(`Failed to update profile: ${error.message}`);
+            toast.error(intl.formatMessage(
+                { id: 'settings.profile.toast.update_error' },
+                { error: error.message }
+            ));
         } finally {
             setIsSaving(false);
         }
@@ -87,15 +92,17 @@ export function ProfileTab() {
                 <CardHeader>
                     <div className="flex items-center justify-between">
                         <div>
-                            <CardTitle>Profile Information</CardTitle>
+                            <CardTitle>
+                                <FormattedMessage id="settings.profile.info.title" defaultMessage="Profile Information" />
+                            </CardTitle>
                             <CardDescription>
-                                Manage your personal information
+                                <FormattedMessage id="settings.profile.info.desc" defaultMessage="Manage your personal information" />
                             </CardDescription>
                         </div>
                         {!isEditing && (
                             <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
                                 <Edit className="h-4 w-4 mr-2" />
-                                Edit
+                                <FormattedMessage id="contacts.action.edit" defaultMessage="Edit" />
                             </Button>
                         )}
                     </div>
@@ -106,25 +113,31 @@ export function ProfileTab() {
                             <User className="h-8 w-8 text-primary" />
                         </div>
                         <div>
-                            <p className="font-medium">{formData.displayName || 'No name set'}</p>
+                            <p className="font-medium">
+                                {formData.displayName || <FormattedMessage id="settings.profile.no_name" defaultMessage="No name set" />}
+                            </p>
                             <p className="text-sm text-muted-foreground">{user?.email}</p>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label htmlFor="displayName">Display Name</Label>
+                            <Label htmlFor="displayName">
+                                <FormattedMessage id="settings.profile.display_name" defaultMessage="Display Name" />
+                            </Label>
                             <Input
                                 id="displayName"
                                 value={formData.displayName}
                                 onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
                                 disabled={!isEditing}
-                                placeholder="Enter your name"
+                                placeholder={intl.formatMessage({ id: 'settings.profile.name_placeholder', defaultMessage: 'Enter your name' })}
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
+                            <Label htmlFor="email">
+                                <FormattedMessage id="settings.profile.email" defaultMessage="Email" />
+                            </Label>
                             <Input
                                 id="email"
                                 value={user?.email || ''}
@@ -134,20 +147,24 @@ export function ProfileTab() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="phone">Phone Number</Label>
+                            <Label htmlFor="phone">
+                                <FormattedMessage id="settings.profile.phone" defaultMessage="Phone Number" />
+                            </Label>
                             <Input
                                 id="phone"
                                 value={formData.phone}
                                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                 disabled={!isEditing}
-                                placeholder="+62 xxx xxxx xxxx"
+                                placeholder={intl.formatMessage({ id: 'settings.profile.phone_placeholder', defaultMessage: '+62 xxx xxxx xxxx' })}
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Account Created</Label>
+                            <Label>
+                                <FormattedMessage id="settings.profile.created_at" defaultMessage="Account Created" />
+                            </Label>
                             <Input
-                                value={user?.created_at ? new Date(user.created_at).toLocaleDateString('id-ID') : 'N/A'}
+                                value={user?.created_at ? new Date(user.created_at).toLocaleDateString(intl.locale === 'id' ? 'id-ID' : 'en-US') : intl.formatMessage({ id: 'common.na', defaultMessage: 'N/A' })}
                                 disabled
                                 className="bg-muted"
                             />
@@ -160,18 +177,18 @@ export function ProfileTab() {
                                 {isSaving ? (
                                     <>
                                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                        Saving...
+                                        <FormattedMessage id="settings.profile.saving" defaultMessage="Saving..." />
                                     </>
                                 ) : (
                                     <>
                                         <Save className="h-4 w-4 mr-2" />
-                                        Save Changes
+                                        <FormattedMessage id="common.button.save" defaultMessage="Save Changes" />
                                     </>
                                 )}
                             </Button>
                             <Button variant="outline" onClick={handleCancel}>
                                 <X className="h-4 w-4 mr-2" />
-                                Cancel
+                                <FormattedMessage id="common.button.cancel" defaultMessage="Cancel" />
                             </Button>
                         </div>
                     )}
@@ -187,26 +204,37 @@ export function ProfileTab() {
             {/* Account Security Info */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Account Security</CardTitle>
+                    <CardTitle>
+                        <FormattedMessage id="settings.profile.security.title" defaultMessage="Account Security" />
+                    </CardTitle>
                     <CardDescription>
-                        Additional security information
+                        <FormattedMessage id="settings.profile.security.desc" defaultMessage="Additional security information" />
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                     <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm font-medium">Last Sign In</span>
+                        <span className="text-sm font-medium">
+                            <FormattedMessage id="settings.profile.last_signin" defaultMessage="Last Sign In" />
+                        </span>
                         <span className="text-sm text-muted-foreground">
-                            {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString('id-ID') : 'N/A'}
+                            {user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString(intl.locale === 'id' ? 'id-ID' : 'en-US') : intl.formatMessage({ id: 'common.na', defaultMessage: 'N/A' })}
                         </span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b">
-                        <span className="text-sm font-medium">Email Verified</span>
+                        <span className="text-sm font-medium">
+                            <FormattedMessage id="settings.profile.email_verified" defaultMessage="Email Verified" />
+                        </span>
                         <span className="text-sm text-muted-foreground">
-                            {user?.email_confirmed_at ? 'Yes' : 'No'}
+                            {user?.email_confirmed_at
+                                ? <FormattedMessage id="common.yes" defaultMessage="Yes" />
+                                : <FormattedMessage id="common.no" defaultMessage="No" />
+                            }
                         </span>
                     </div>
                     <div className="flex justify-between items-center py-2">
-                        <span className="text-sm font-medium">User ID</span>
+                        <span className="text-sm font-medium">
+                            <FormattedMessage id="settings.profile.user_id" defaultMessage="User ID" />
+                        </span>
                         <span className="text-sm text-muted-foreground font-mono text-xs">
                             {user?.id?.substring(0, 8)}...
                         </span>
