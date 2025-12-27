@@ -11,9 +11,10 @@ interface ChatWindowProps {
     messages: Message[];
     isLoading: boolean;
     onSendMessage: (content: string) => Promise<void>;
+    selectedPhone?: string;
 }
 
-export function ChatWindow({ messages, isLoading, onSendMessage }: ChatWindowProps) {
+export function ChatWindow({ messages, isLoading, onSendMessage, selectedPhone }: ChatWindowProps) {
     const intl = useIntl();
     const scrollRef = React.useRef<HTMLDivElement>(null);
     const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -137,7 +138,7 @@ export function ChatWindow({ messages, isLoading, onSendMessage }: ChatWindowPro
             <div className="flex-1 min-h-0">
                 {renderContent()}
             </div>
-            <ChatInput onSendMessage={onSendMessage} disabled={isLoading} />
+            <ChatInput onSendMessage={onSendMessage} disabled={isLoading} conversationKey={selectedPhone} />
         </div>
     );
 }

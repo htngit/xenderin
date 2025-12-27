@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils';
 interface ChatInputProps {
     onSendMessage: (content: string, asset?: AssetFile) => Promise<void>;
     disabled?: boolean;
+    conversationKey?: string;
 }
 
-export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
+export function ChatInput({ onSendMessage, disabled = false, conversationKey }: ChatInputProps) {
     const [message, setMessage] = useState('');
     const [isSending, setIsSending] = useState(false);
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -26,6 +27,17 @@ export function ChatInput({ onSendMessage, disabled = false }: ChatInputProps) {
             textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
         }
     }, [message, selectedAsset]);
+
+    // Focus textarea and clear state when conversation changes
+    useEffect(() => {
+        if (conversationKey && textareaRef.current) {
+            // Clear message and selected asset when switching conversations
+            setMessage('');
+            setSelectedAsset(undefined);
+            // Focus the input after a small delay for DOM to settle
+            setTimeout(() => textareaRef.current?.focus(), 50);
+        }
+    }, [conversationKey]);
 
     const handleSend = async () => {
         if ((!message.trim() && !selectedAsset) || isSending || disabled) return;

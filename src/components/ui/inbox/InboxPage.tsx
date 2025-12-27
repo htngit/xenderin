@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useIntl, FormattedMessage } from 'react-intl';
 import { toast } from 'sonner';
@@ -58,6 +58,14 @@ export function InboxPage() {
     // WhatsApp connection warning state
     const [showConnectionWarning, setShowConnectionWarning] = useState(false);
     const [isCheckingConnection, setIsCheckingConnection] = useState(true);
+
+    // Ref to hold the latest selectedConversation (to avoid stale closure in IPC callback)
+    const selectedConversationRef = useRef<ConversationSummary | null>(null);
+
+    // Keep ref in sync with state
+    useEffect(() => {
+        selectedConversationRef.current = selectedConversation;
+    }, [selectedConversation]);
 
     // Check WhatsApp connection status on mount
     useEffect(() => {
@@ -162,14 +170,17 @@ export function InboxPage() {
         const handleIncomingMessage = async (data: unknown) => {
             const messageData = data as IncomingWhatsAppMessage;
             try {
+                console.log('[Inbox] Incoming message received:', messageData.from);
                 await messageService.createFromIncomingWhatsApp(messageData);
                 await loadConversations();
 
-                // If the message is from the currently selected conversation, reload messages
-                if (selectedConversation) {
+                // Use ref to get the CURRENT selectedConversation (avoids stale closure)
+                const currentConversation = selectedConversationRef.current;
+                if (currentConversation) {
                     const normalizedPhone = messageData.from.replace('@c.us', '').replace(/[^\d]/g, '');
-                    if (selectedConversation.contact_phone.replace(/[^\d]/g, '') === normalizedPhone) {
-                        await loadMessages(selectedConversation.contact_phone);
+                    if (currentConversation.contact_phone.replace(/[^\d]/g, '') === normalizedPhone) {
+                        console.log('[Inbox] Reloading messages for current conversation');
+                        await loadMessages(currentConversation.contact_phone);
                     }
                 }
             } catch (error) {
@@ -187,7 +198,7 @@ export function InboxPage() {
                 unsubscribe();
             }
         };
-    }, [messageService, loadConversations, loadMessages, selectedConversation]);
+    }, [messageService, loadConversations, loadMessages]);
 
     // Send Message
     const handleSendMessage = async (content: string, asset?: AssetFile) => {
@@ -424,6 +435,7 @@ export function InboxPage() {
                                 messages={messages}
                                 isLoading={isLoadingMessages}
                                 onSendMessage={handleSendMessage}
+                                selectedPhone={selectedConversation.contact_phone}
                             />
                         </>
                     ) : (
