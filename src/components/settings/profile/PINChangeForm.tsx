@@ -92,7 +92,7 @@ export function PINChangeForm() {
 
         try {
             // console.log('[PINChangeForm] Updating PIN for user:', userId);
-            const { data, error } = await supabase
+            const { error } = await supabase
                 .from('profiles')
                 .update({
                     pin: newPIN,
